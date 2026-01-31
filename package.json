@@ -7,16 +7,12 @@
   "license": "MIT",
   "scripts": {
     "build": "nest build api && nest build worker",
-
     "start:api": "nest start api",
     "start:api:dev": "nest start api --watch",
-
     "start:worker": "nest start worker",
     "start:worker:dev": "nest start worker --watch",
-
     "start:prod:api": "node dist/apps/api/main.js",
     "start:prod:worker": "node dist/apps/worker/main.js",
-
     "format": "prettier --write \"apps/**/*.ts\"",
     "lint": "eslint \"apps/**/*.ts\" --fix"
   },
@@ -26,13 +22,16 @@
   ],
   "dependencies": {
     "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/microservices": "^11.1.12",
     "@nestjs/platform-express": "^11.0.1",
-    "@prisma/client": "^6.19.2",
+    "@prisma/adapter-pg": "^7.3.0",
+    "@prisma/client": "^7.3.0",
     "amqp-connection-manager": "^5.0.0",
     "amqplib": "^0.10.9",
-    "prisma": "^6.19.2",
+    "pg": "^8.18.0",
+    "prisma": "^7.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -45,6 +44,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
+    "@types/pg": "^8.16.0",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
