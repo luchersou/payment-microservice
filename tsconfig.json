@@ -9,6 +9,9 @@
     "experimentalDecorators": true,
     "sourceMap": true,
     "baseUrl": "./",
+    "paths": {
+      "@generated/*": ["src/generated/*"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,

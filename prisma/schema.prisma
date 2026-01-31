@@ -1,10 +1,15 @@
-generator client {
-  provider = "prisma-client-js"
+generator client_api {
+  provider = "prisma-client"
+  output   = "../apps/api/src/generated/prisma"
+}
+
+generator client_worker {
+  provider = "prisma-client"
+  output   = "../apps/worker/src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model Order {
