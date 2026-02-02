@@ -4,22 +4,31 @@
   "monorepo": true,
   "root": "apps/api",
   "projects": {
-    "api": {
+    "api-gateway": {
       "type": "application",
-      "root": "apps/api",
+      "root": "apps/api-gateway",
       "entryFile": "main",
-      "sourceRoot": "apps/api/src",
+      "sourceRoot": "apps/api-gateway/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/api/tsconfig.json"
+        "tsConfigPath": "apps/api-gateway/tsconfig.json"
       }
     },
-    "worker": {
+    "order-service": {
       "type": "application",
-      "root": "apps/worker",
+      "root": "apps/order-service",
       "entryFile": "main",
-      "sourceRoot": "apps/worker/src",
+      "sourceRoot": "apps/order-service/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/worker/tsconfig.json"
+        "tsConfigPath": "apps/order-service/tsconfig.json"
+      }
+    },
+    "payment-service": {
+      "type": "application",
+      "root": "apps/payment-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/payment-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/payment-service/tsconfig.json"
       }
     }
   }
