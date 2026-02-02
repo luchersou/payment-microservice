@@ -8,9 +8,12 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
-    "baseUrl": "./",
+    "baseUrl": ".",
     "paths": {
-      "@generated/*": ["src/generated/*"]
+      "@database/*": ["libs/database/*"],
+      "@messaging/*": ["libs/messaging/*"],
+      "@contracts/*": ["libs/contracts/*"],
+      "@shared/*": ["libs/shared/*"]
     },
     "incremental": true,
     "skipLibCheck": true,

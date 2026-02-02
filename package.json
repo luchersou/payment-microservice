@@ -6,19 +6,25 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "build": "nest build api && nest build worker",
-    "start:api": "nest start api",
-    "start:api:dev": "nest start api --watch",
-    "start:worker": "nest start worker",
-    "start:worker:dev": "nest start worker --watch",
-    "start:prod:api": "node dist/apps/api/main.js",
-    "start:prod:worker": "node dist/apps/worker/main.js",
-    "format": "prettier --write \"apps/**/*.ts\"",
-    "lint": "eslint \"apps/**/*.ts\" --fix"
+    "build": "nest build api-gateway && nest build order-service && nest build payment-service",
+    "start:dev": "concurrently \"npm run start:api-gateway:dev\" \"npm run start:order:dev\" \"npm run start:payment:dev\"",
+    "start:api-gateway": "nest start api-gateway",
+    "start:api-gateway:dev": "nest start api-gateway --watch",
+    "start:order": "nest start order-service",
+    "start:order:dev": "nest start order-service --watch",
+    "start:payment": "nest start payment-service",
+    "start:payment:dev": "nest start payment-service --watch",
+    "start:prod:api-gateway": "node dist/apps/api-gateway/main.js",
+    "start:prod:order": "node dist/apps/order-service/main.js",
+    "start:prod:payment": "node dist/apps/payment-service/main.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
+    "format": "prettier --write \"{apps,libs}/**/*.ts\""
   },
   "workspaces": [
-    "apps/api",
-    "apps/worker"
+    "apps/*",
+    "libs/*"
   ],
   "dependencies": {
     "@nestjs/common": "^11.0.1",
