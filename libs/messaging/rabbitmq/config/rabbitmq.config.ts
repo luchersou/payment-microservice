@@ -10,7 +10,6 @@ export async function setupRabbitMQ(channel: Channel) {
   await channel.assertExchange(Exchanges.PAYMENTS, 'topic', { durable: true });
   await channel.assertExchange(Exchanges.DLX, 'topic', { durable: true });
 
-
   // Queues
   await channel.assertQueue(Queues.ORDER_CREATED, {
     durable: true,
