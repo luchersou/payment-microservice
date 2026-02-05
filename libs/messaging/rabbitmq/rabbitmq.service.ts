@@ -19,6 +19,8 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       this.connection = await amqp.connect(url);
       this.channel = await this.connection.createChannel();
 
+      await this.channel.prefetch(10);
+
       await setupRabbitMQ(this.channel);
 
       this.logger.log('RabbitMQ connected and configured ✅');
@@ -43,20 +45,29 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`📤 Event published → ${routingKey}`);
   }
 
-  async consume(queue: string, callback: (msg: any) => void) {
+  async consume<T>(
+    exchange: string,
+    queue: string,
+    routingKey: string,
+    callback: (msg: T) => Promise<void>,
+  ) {
     if (!this.channel) {
       this.logger.error('Channel not initialized');
       return;
     }
 
-    await this.channel.consume(queue, (msg) => {
+    await this.channel.assertExchange(exchange, 'topic', { durable: true });
+    await this.channel.assertQueue(queue, { durable: true });
+    await this.channel.bindQueue(queue, exchange, routingKey);
+
+    await this.channel.consume(queue, async (msg) => {
       if (!msg) return;
 
-      const content = JSON.parse(msg.content.toString());
-      this.logger.log(`📥 Event received from ${queue}`);
+      const content = JSON.parse(msg.content.toString()) as T;
+      this.logger.log(`📥 Event received → ${routingKey}`);
 
       try {
-        callback(content);
+        await callback(content);
         this.channel.ack(msg);
       } catch (err) {
         this.logger.error('Error processing message', err);

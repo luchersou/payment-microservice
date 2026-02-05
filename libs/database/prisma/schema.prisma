@@ -43,7 +43,7 @@ model OrderItem {
 
 model Payment {
   id        String        @id @default(uuid())
-  orderId   String
+  orderId   String        @unique
   amount    Float
   status    PaymentStatus @default(PENDING)
   createdAt DateTime      @default(now())

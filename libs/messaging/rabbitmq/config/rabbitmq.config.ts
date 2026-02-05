@@ -39,8 +39,8 @@ export async function setupRabbitMQ(channel: Channel) {
 
   await channel.bindQueue(
     Queues.PAYMENT_PROCESS,
-    Exchanges.PAYMENTS,
-    RoutingKeys.PROCESS_PAYMENT,
+    Exchanges.ORDERS,
+    RoutingKeys.ORDER_CREATED,
   );
 
   await channel.bindQueue(
