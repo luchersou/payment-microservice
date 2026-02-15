@@ -18,18 +18,23 @@ This project implements a **microservices architecture** with an **API Gateway**
 ```mermaid
 graph LR
     Client[Client] -->|HTTP| GW[API Gateway]
-    
+
     GW -->|Events| RMQ[RabbitMQ]
-    GW -.->|HTTP| Services
-    
-    RMQ <-->|Events| Services[Microservices<br/>Order + Payment]
-    
-    Services --> DB[(PostgreSQL<br/>Databases)]
-    
+    GW -.->|HTTP| Order[Order Service]
+    GW -.->|HTTP| Payment[Payment Service]
+
+    RMQ <-->|Events| Order
+    RMQ <-->|Events| Payment
+
+    Order --> OrderDB[(PostgreSQL<br/>Order DB)]
+    Payment --> PaymentDB[(PostgreSQL<br/>Payment DB)]
+
     style GW fill:#4A90E2,color:#fff
     style RMQ fill:#FF6B35,color:#fff
-    style Services fill:#50C878,color:#fff
-    style DB fill:#9B59B6,color:#fff
+    style Order fill:#50C878,color:#fff
+    style Payment fill:#50C878,color:#fff
+    style OrderDB fill:#9B59B6,color:#fff
+    style PaymentDB fill:#9B59B6,color:#fff
 ```
 
 ### Architecture Highlights
@@ -63,6 +68,12 @@ payment-microservices/
 │   │               └── payments.module.ts
 │   │
 │   ├── order-service/               # Order Microservice (Port 3001)
+│   │   ├── prisma/
+│   │   │   ├── generated/
+│   │   │   ├── migrations/
+│   │   │   ├── prisma.module.ts
+│   │   │   ├── prisma.service.ts
+│   │   │   └── schema.prisma
 │   │   └── src/
 │   │       └── modules/
 │   │           └── order/
@@ -72,6 +83,12 @@ payment-microservices/
 │   │               └── order.service.ts
 │   │
 │   └── payment-service/             # Payment Microservice (Port 3002)
+│       ├── prisma/
+│       │   ├── generated/
+│       │   ├── migrations/
+│       │   ├── prisma.module.ts
+│       │   ├── prisma.service.ts
+│       │   └── schema.prisma
 │       └── src/
 │           └── modules/
 │               └── payment/
@@ -91,13 +108,6 @@ payment-microservices/
 │   │   └── types/
 │   │       └── event-types.enum.ts
 │   │       └── cancel-reason.enum.ts
-│   │
-│   ├── database/                    
-│   │   └── prisma/
-│   │       ├── schema.prisma
-│   │       ├── prisma.module.ts
-│   │       ├── prisma.service.ts
-│   │       └── migrations/
 │   │
 │   └── messaging/                   # Shared RabbitMQ module
 │       └── rabbitmq/
