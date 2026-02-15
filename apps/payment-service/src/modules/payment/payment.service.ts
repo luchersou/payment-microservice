@@ -9,12 +9,12 @@ import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
 import { PaymentDeclinedEvent } from '@contracts/events/payment-declined.event';
 import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
 
-import { PaymentStatus } from '@database/prisma/generated/prisma/enums';
+import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 import { v4 as uuid } from 'uuid';
 import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
 import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
-import { PrismaService } from '@database/prisma/prisma.service';
+import { PrismaService } from '@payment/prisma/prisma.service';
 
 @Injectable()
 export class PaymentService {

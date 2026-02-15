@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Order {
+  id        String      @id @default(uuid())
+  userId    String
+  total     Float
+  status    OrderStatus @default(PENDING_PAYMENT)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+  FAILED
+}

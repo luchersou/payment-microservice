@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OrderCreatedPayload } from '@contracts/events/order-created.event';
-import { OrderStatus } from '@database/prisma/generated/prisma/enums';
+import { OrderStatus } from '@order/prisma/generated/prisma/client';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
 import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
-import { PrismaService } from '@database/prisma/prisma.service';
-import { Order } from '@database/prisma/generated/prisma/browser';
+import { PrismaService } from '@order/prisma/prisma.service';
+import { Order } from '@order/prisma/generated/prisma/client';
 import { OrderResponseDto } from './dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
 import { CancelReason } from '@contracts/types/cancel-reason.enum';

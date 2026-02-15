@@ -8,12 +8,13 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
+    "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@database/*": ["libs/database/*"],
       "@messaging/*": ["libs/messaging/*"],
       "@contracts/*": ["libs/contracts/*"],
-      "@shared/*": ["libs/shared/*"]
+      "@order/*": ["apps/order-service/*"],
+      "@payment/*": ["apps/payment-service/*"]
     },
     "incremental": true,
     "skipLibCheck": true,

@@ -1,17 +1,35 @@
 services:
-  postgres:
+
+  order-db:
     image: postgres:17
-    container_name: orders-postgres
+    container_name: order-db
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: orders_db
+      POSTGRES_DB: order_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - order_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d orders_db"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  payment-db:
+    image: postgres:17
+    container_name: payment-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: payment_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - payment_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d payment_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -58,10 +76,10 @@ services:
       - "3001:3001"
     environment:
       PORT: 3001
-      DATABASE_URL: postgresql://admin:admin123@postgres:5432/orders_db
+      DATABASE_URL: postgresql://admin:admin123@order-db:5432/order_db
       RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
     depends_on:
-      postgres:
+      order-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -75,14 +93,15 @@ services:
       - "3002:3002"
     environment:
       PORT: 3002
-      DATABASE_URL: postgresql://admin:admin123@postgres:5432/orders_db
+      DATABASE_URL: postgresql://admin:admin123@payment-db:5432/payment_db
       RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
     depends_on:
-      postgres:
+      payment-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
 
 volumes:
-  postgres_data:
+  order_postgres_data:
+  payment_postgres_data:
   rabbitmq_data:

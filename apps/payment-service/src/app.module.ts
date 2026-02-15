@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { PrismaModule } from '@database/prisma/prisma.module';
+import { PrismaModule } from '@payment/prisma/prisma.module';
 import { RabbitMQModule } from '@messaging/rabbitmq/rabbitmq.module';
 import { PaymentsController } from './modules/payment/payment.controller';
 import { PaymentService } from './modules/payment/payment.service';
