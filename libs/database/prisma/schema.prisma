@@ -7,46 +7,36 @@ datasource db {
   provider = "postgresql"
 }
 
-enum OrderStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  PENDING
-  APPROVED
-  FAILED
-}
-
 model Order {
-  id        String        @id @default(uuid())
+  id        String      @id @default(uuid())
+  userId    String
   total     Float
-  status    OrderStatus   @default(PENDING)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  items     OrderItem[]
-  payments  Payment[]
-}
-
-model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String
-  product   String
-  price     Float
-  quantity  Int
-
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus @default(PENDING_PAYMENT)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 }
 
 model Payment {
   id        String        @id @default(uuid())
   orderId   String        @unique
   amount    Float
-  status    PaymentStatus @default(PENDING)
+  status    PaymentStatus @default(PROCESSING)
   createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
 
-  order     Order         @relation(fields: [orderId], references: [id])
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+  FAILED
+}
+
+enum PaymentStatus {
+  PROCESSING
+  APPROVED
+  DECLINED
+  REFUNDED
+  FAILED
 }

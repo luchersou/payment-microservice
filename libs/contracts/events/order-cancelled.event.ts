@@ -1,4 +1,5 @@
 import { BaseEvent } from './base.event';
+import { EventTypes } from '@contracts/types/event-types.enum';
 
 export interface OrderCancelledPayload {
   orderId: string;
@@ -6,4 +7,6 @@ export interface OrderCancelledPayload {
   cancelledAt: Date;
 }
 
-export class OrderCancelledEvent extends BaseEvent<OrderCancelledPayload> {}
+export class OrderCancelledEvent extends BaseEvent<OrderCancelledPayload> {
+  readonly eventType = EventTypes.ORDER_CANCELLED;
+}

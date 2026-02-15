@@ -6,27 +6,45 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "build": "nest build api-gateway && nest build order-service && nest build payment-service",
+    "build:api-gateway": "nest build api-gateway",
+    "build:order-service": "nest build order-service",
+    "build:payment-service": "nest build payment-service",
+    "build": "nest build",
+    
     "start:dev": "concurrently \"npm run start:api-gateway:dev\" \"npm run start:order:dev\" \"npm run start:payment:dev\"",
+    
     "start:api-gateway": "nest start api-gateway",
     "start:api-gateway:dev": "nest start api-gateway --watch",
     "start:order": "nest start order-service",
     "start:order:dev": "nest start order-service --watch",
     "start:payment": "nest start payment-service",
     "start:payment:dev": "nest start payment-service --watch",
+    
     "start:prod:api-gateway": "node dist/apps/api-gateway/main.js",
     "start:prod:order": "node dist/apps/order-service/main.js",
     "start:prod:payment": "node dist/apps/payment-service/main.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    
+    "prisma:generate": "prisma generate --schema=./libs/database/prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=./libs/database/prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema=./libs/database/prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema=./libs/database/prisma/schema.prisma",
+    
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:restart": "docker-compose restart",
+    "docker:clean": "docker-compose down -v",
+    
     "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
-    "format": "prettier --write \"{apps,libs}/**/*.ts\""
+    "format": "prettier --write \"{apps,libs}/**/*.ts\"",
+    
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
   },
-  "workspaces": [
-    "apps/*",
-    "libs/*"
-  ],
   "dependencies": {
+    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -36,10 +54,13 @@
     "@prisma/client": "^7.3.0",
     "amqp-connection-manager": "^5.0.0",
     "amqplib": "^0.10.9",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.3",
     "pg": "^8.18.0",
     "prisma": "^7.3.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

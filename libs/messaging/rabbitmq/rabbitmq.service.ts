@@ -13,64 +13,75 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     await this.connect();
   }
 
-  async connect() {
+ private async connect() {
+    if (this.connection && this.channel) return;
+
+    const url = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
+
     try {
-      const url = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
       this.connection = await amqp.connect(url);
       this.channel = await this.connection.createChannel();
 
-      await this.channel.prefetch(10);
+      this.connection.on('error', (err) => {
+        this.logger.error('RabbitMQ connection error:', err);
+      });
 
+      this.connection.on('close', () => {
+        this.logger.warn('RabbitMQ connection closed. Reconnecting...');
+        setTimeout(() => this.connect(), 5000); 
+      });
+
+      await this.channel.prefetch(10);
       await setupRabbitMQ(this.channel);
 
       this.logger.log('RabbitMQ connected and configured ✅');
     } catch (error) {
-      this.logger.error('RabbitMQ connection failed ❌', error);
-      setTimeout(() => this.connect(), 5000); // automatic retry
+      this.logger.error('Failed to connect to RabbitMQ:', error);
+      setTimeout(() => this.connect(), 5000); 
     }
   }
 
-  async publish(exchange: string, routingKey: string, message: any) {
-    if (!this.channel) {
-      this.logger.error('Channel not initialized');
-      return;
+  async publish<T>(
+    exchange: string,
+    routingKey: string,
+    message: T,
+  ): Promise<void> {
+    const success = this.channel.publish(
+      exchange,
+      routingKey,
+      Buffer.from(JSON.stringify(message)),
+      { persistent: true },
+    );
+
+    if (!success) {
+      this.logger.error(
+        `Failed to publish message to ${exchange}/${routingKey}`,
+      );
+      throw new Error('Failed to publish message to RabbitMQ');
     }
 
-    const payload = Buffer.from(JSON.stringify(message));
-
-    this.channel.publish(exchange, routingKey, payload, {
-      persistent: true,
-    });
-
-    this.logger.log(`📤 Event published → ${routingKey}`);
+    this.logger.debug(
+      `✅ Published to ${exchange}/${routingKey}: ${JSON.stringify(message)}`,
+    );
   }
 
   async consume<T>(
-    exchange: string,
     queue: string,
+    exchange: string,
     routingKey: string,
-    callback: (msg: T) => Promise<void>,
-  ) {
-    if (!this.channel) {
-      this.logger.error('Channel not initialized');
-      return;
-    }
+    handler: (message: T) => Promise<void>,
+  ): Promise<void> {
 
-    await this.channel.assertExchange(exchange, 'topic', { durable: true });
-    await this.channel.assertQueue(queue, { durable: true });
     await this.channel.bindQueue(queue, exchange, routingKey);
 
     await this.channel.consume(queue, async (msg) => {
       if (!msg) return;
 
-      const content = JSON.parse(msg.content.toString()) as T;
-      this.logger.log(`📥 Event received → ${routingKey}`);
-
       try {
-        await callback(content);
+        const content = JSON.parse(msg.content.toString()) as T;
+        await handler(content);
         this.channel.ack(msg);
       } catch (err) {
-        this.logger.error('Error processing message', err);
         this.channel.nack(msg, false, false);
       }
     });
