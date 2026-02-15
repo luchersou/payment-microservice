@@ -52,9 +52,9 @@ export class OrdersService {
   async cancelOrder(orderId: string) {
     await this.rabbit.publish(
       Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
+      RoutingKeys.ORDER_CANCEL_REQUESTED,
       {
-        eventType: EventTypes.ORDER_CANCELLED,
+        eventType: EventTypes.ORDER_CANCEL_REQUESTED,
         payload: { orderId },
       },
     );

@@ -9,6 +9,7 @@ import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
 import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
 import { OrderCreatedEvent } from '@contracts/events/order-created.event';
 import { EventTypes } from '@contracts/types/event-types.enum';
+import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 
 type PaymentEvents =
   | PaymentApprovedEvent
@@ -34,6 +35,21 @@ export class OrderConsumer implements OnModuleInit {
           `📥 Received OrderCreated: ${event.payload.orderId}`,
         );
         await this.orderService.createOrder(event.payload);
+      },
+    );
+
+    await this.rabbit.consume<OrderCancelledEvent>(
+      Queues.ORDER_PROCESS,
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CANCEL_REQUESTED,
+      async (event) => {
+        this.logger.log(
+          `📥 Received OrderCancelled: ${event.payload.orderId}`,
+        );
+
+        await this.orderService.cancelByUser(
+          event.payload.orderId,
+        );
       },
     );
 

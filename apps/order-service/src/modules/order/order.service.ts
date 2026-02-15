@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OrderCreatedPayload } from '@contracts/events/order-created.event';
-import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 import { OrderStatus } from '@database/prisma/generated/prisma/enums';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
@@ -10,6 +9,8 @@ import { PrismaService } from '@database/prisma/prisma.service';
 import { Order } from '@database/prisma/generated/prisma/browser';
 import { OrderResponseDto } from './dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
+import { CancelReason } from '@contracts/types/cancel-reason.enum';
+import { EventTypes } from '@contracts/types/event-types.enum';
 
 @Injectable()
 export class OrderService {
@@ -123,11 +124,11 @@ export class OrderService {
   }
 
   async cancelByUser(orderId: string) {
-    return this.cancelOrderInternal(orderId, 'USER_REQUESTED');
+    return this.cancelOrderInternal(orderId, CancelReason.USER_REQUESTED);
   }
 
   async cancelByPaymentDeclined(orderId: string) {
-    return this.cancelOrderInternal(orderId, 'PAYMENT_DECLINED');
+    return this.cancelOrderInternal(orderId, CancelReason.PAYMENT_DECLINED);
   }
 
   async failOrder(orderId: string) {
@@ -156,55 +157,55 @@ export class OrderService {
 
   private async cancelOrderInternal(
     orderId: string,
-    reason: string,
+    reason: CancelReason,
   ) {
-  this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
+    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
 
-  const order = await this.waitForOrder(orderId);
+    const order = await this.waitForOrder(orderId);
 
-  if (!order) {
-    this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-    return;
-  }
+    if (!order) {
+      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
+      return;
+    }
 
-  if (order.status === OrderStatus.CANCELLED) {
-    this.logger.warn(`⚠️ Order ${orderId} already cancelled.`);
-    return order;
-  }
+    if (
+      order.status === OrderStatus.CANCELLED ||
+      order.status === OrderStatus.FAILED
+    ) {
+      this.logger.warn(`⚠️ Order ${orderId} already finalized.`);
+      return order;
+    }
 
-  if (order.status === OrderStatus.PAID) {
-    this.logger.warn(
-      `⚠️ Cannot cancel order ${orderId} because it is already PAID.`,
-    );
-    return;
-  }
+    const newStatus =
+      reason === CancelReason.PAYMENT_DECLINED
+        ? OrderStatus.FAILED
+        : OrderStatus.CANCELLED;
 
-  const updatedOrder = await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: orderId },
       data: {
-        status: OrderStatus.CANCELLED,
+        status: newStatus,
       },
-    });
-
-    await this.emitOrderCancelled(updatedOrder, reason);
-
-    this.logger.log(`✅ Order ${orderId} cancelled successfully`);
-
-    return updatedOrder;
-  }
-
-  private async emitOrderCancelled(order: Order, reason: string) {
-    const event = new OrderCancelledEvent({
-      orderId: order.id,
-      reason,
-      cancelledAt: new Date(),
     });
 
     await this.rabbit.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCELLED,
-      event,
+      {
+        eventType: EventTypes.ORDER_CANCELLED,
+        payload: {
+          orderId: updatedOrder.id,
+          reason,
+          cancelledAt: new Date(),
+        },
+      },
     );
+
+    this.logger.log(
+      `✅ Order ${orderId} updated to ${newStatus} successfully`,
+    );
+
+    return updatedOrder;
   }
 
   private async waitForOrder(
@@ -233,5 +234,4 @@ export class OrderService {
 
     return null;
   }
-
 }

@@ -90,6 +90,7 @@ payment-microservices/
 │   │   │   └── payment-failed.event.ts
 │   │   └── types/
 │   │       └── event-types.enum.ts
+│   │       └── cancel-reason.enum.ts
 │   │
 │   ├── database/                    
 │   │   └── prisma/
@@ -229,10 +230,10 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 ### Cancel Order Flow
 ```
 1. Client → PATCH /api/orders/:id (status: CANCELLED)
-2. API Gateway → Emit order.cancelled event → RabbitMQ
-3. Order Service → Consume order.cancelled → Update order (status: CANCELLED)
+2. API Gateway → Emit order.cancelled.requested event → RabbitMQ
+3. Order Service → Consume order.cancelled.requested → Update order (status: CANCELLED)
 4. Payment Service → Consume order.cancelled → Handle refund/cancellation
-   - If PROCESSING → Mark as CANCELLED
+   - If PROCESSING → Mark as DECLINED
    - If APPROVED → Mark as REFUNDED
 ```
 
