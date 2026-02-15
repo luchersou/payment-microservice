@@ -8,9 +8,12 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
-    "baseUrl": "./",
+    "baseUrl": ".",
     "paths": {
-      "@generated/*": ["src/generated/*"]
+      "@database/*": ["libs/database/*"],
+      "@messaging/*": ["libs/messaging/*"],
+      "@contracts/*": ["libs/contracts/*"],
+      "@shared/*": ["libs/shared/*"]
     },
     "incremental": true,
     "skipLibCheck": true,
@@ -18,6 +21,9 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "noFallthroughCasesInSwitch": false,
+    "types": ["node"],           
+    "declaration": true,         
+    "removeComments": true       
   }
 }
