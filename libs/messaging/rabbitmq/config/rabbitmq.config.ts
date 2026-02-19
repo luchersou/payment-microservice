@@ -2,7 +2,6 @@ import { Exchanges } from '../constants/exchanges.constant';
 import { Queues } from '../constants/queues.constant';
 import { DLQ } from '../constants/dlq.constant';
 import { Channel } from 'amqplib';
-import { RoutingKeys } from '../constants/routing-keys.constant';
 
 export async function setupRabbitMQ(channel: Channel) {
   // ========================

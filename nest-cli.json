@@ -9,7 +9,7 @@
       "entryFile": "main",
       "sourceRoot": "apps/api-gateway/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/api-gateway/tsconfig.json"
+        "tsConfigPath": "apps/api-gateway/tsconfig.build.json"
       }
     },
     "order-service": {
@@ -18,7 +18,7 @@
       "entryFile": "main",
       "sourceRoot": "apps/order-service/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/order-service/tsconfig.json"
+        "tsConfigPath": "apps/order-service/tsconfig.build.json"
       }
     },
     "payment-service": {
@@ -27,7 +27,16 @@
       "entryFile": "main",
       "sourceRoot": "apps/payment-service/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/payment-service/tsconfig.json"
+        "tsConfigPath": "apps/payment-service/tsconfig.build.json"
+      }
+    },
+    "messaging": {
+      "type": "library",
+      "root": "libs/messaging",
+      "entryFile": "index",
+      "sourceRoot": "libs/messaging/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/messaging/tsconfig.build.json"
       }
     }
   }

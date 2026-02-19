@@ -2,11 +2,10 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": "../../",
-    "outDir": "../../dist/apps/order-service"
+    "outDir": "../../dist/libs/messaging"
   },
   "include": [
-    "src/**/*",
-    "../../libs/**/*"
+    "src/**/*"
   ],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }
