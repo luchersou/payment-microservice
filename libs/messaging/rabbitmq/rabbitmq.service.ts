@@ -67,12 +67,8 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
 
   async consume<T>(
     queue: string,
-    exchange: string,
-    routingKey: string,
     handler: (message: T) => Promise<void>,
   ): Promise<void> {
-
-    await this.channel.bindQueue(queue, exchange, routingKey);
 
     await this.channel.consume(queue, async (msg) => {
       if (!msg) return;

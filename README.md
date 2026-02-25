@@ -132,18 +132,19 @@ payment-microservices/
 - Request timeout and retry logic
 
 ### ✅ Order Service
-- Manages order lifecycle (PENDING → PAID → CANCELLED → FAILED)
-- Consumes `order.created` and `order.cancelled` events
-- Emits `payment.approved`, `payment.declined`, `payment.failed` events
-- RESTful API for order queries (GET endpoints)
-- Isolated PostgreSQL database
+* Manages order lifecycle (PENDING → PAID → CANCELLED → FAILED)
+* Consumes order.created and order.cancel_requested events to persist order state
+* Consumes payment.approved, payment.declined, payment.failed events to update order status
+* RESTful API for order queries (GET endpoints)
+* Isolated PostgreSQL database
 
 ### ✅ Payment Service
-- Manages payment processing (PROCESSING → APPROVED/DECLINED/FAILED/REFUNDED/CANCELLED)
-- Consumes `order.created` event to initiate payments
-- Simulates payment gateway integration with approval/decline logic
-- Provides payment statistics and queries
-- Isolated PostgreSQL database
+* Manages payment processing (PROCESSING → APPROVED/DECLINED/FAILED/REFUNDED/CANCELLED)
+* Consumes order.created event to initiate payment processing
+* Emits payment.approved, payment.declined, payment.failed events based on processing result
+* Simulates payment gateway integration with approval/decline logic
+* Provides payment statistics and queries
+* Isolated PostgreSQL database
 
 ### ✅ Event-Driven Architecture
 - RabbitMQ for asynchronous messaging
@@ -238,14 +239,13 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 ```
 
 ### Cancel Order Flow
-```
-1. Client → PATCH /api/orders/:id (status: CANCELLED)
-2. API Gateway → Emit order.cancelled.requested event → RabbitMQ
-3. Order Service → Consume order.cancelled.requested → Update order (status: CANCELLED)
-4. Payment Service → Consume order.cancelled → Handle refund/cancellation
-   - If PROCESSING → Mark as DECLINED
+
+1. Client → PATCH /api/orders/:id/cancel
+2. API Gateway → Emit order.cancel_requested event → RabbitMQ
+3. Order Service → Consume order.cancel_requested → Update order (status: CANCELLED)
+4. Payment Service → Consume order.cancel_requested → Handle refund/cancellation
+   - If PROCESSING → Mark as CANCELLED
    - If APPROVED → Mark as REFUNDED
-```
 
 ---
 
