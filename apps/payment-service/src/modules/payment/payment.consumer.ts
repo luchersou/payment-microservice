@@ -6,7 +6,7 @@ import { OrderCreatedEvent } from '@contracts/events/order-created.event';
 import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 import { EventTypes } from '@contracts/types/event-types.enum';
 
-type OrderEvents = OrderCreatedEvent | OrderCancelledEvent;
+type OrderDomainEvents = OrderCreatedEvent | OrderCancelledEvent;
 
 @Injectable()
 export class PaymentConsumer implements OnModuleInit {
@@ -18,7 +18,7 @@ export class PaymentConsumer implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.rabbit.consume<OrderEvents>(
+    await this.rabbit.consume<OrderDomainEvents>(
       Queues.PAYMENT_PROCESS,
       async (event) => {
         switch (event.eventType) {

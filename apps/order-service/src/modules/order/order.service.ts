@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { OrderCreatedPayload } from '@contracts/events/order-created.event';
 import { OrderStatus } from '@order/prisma/generated/prisma/client';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
@@ -11,6 +10,8 @@ import { OrderResponseDto } from './dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
 import { CancelReason } from '@contracts/types/cancel-reason.enum';
 import { EventTypes } from '@contracts/types/event-types.enum';
+import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class OrderService {
@@ -70,12 +71,13 @@ export class OrderService {
     };
   }
 
-  async createOrder(payload: OrderCreatedPayload) {
-    const order = await this.prisma.order.upsert({
-      where: { id: payload.orderId },
-      update: {},
-      create: {
-        id: payload.orderId,
+  async createOrder(payload: CreateOrderRequestedPayload) {
+
+    const orderId = randomUUID();
+
+    const order = await this.prisma.order.create({
+      data: {
+        id: orderId,
         userId: payload.userId,
         total: payload.total,
         status: OrderStatus.PENDING_PAYMENT,
@@ -83,6 +85,19 @@ export class OrderService {
     });
 
     this.logger.log(`✅ Order ${order.id} persisted`);
+
+    await this.rabbit.publish(
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CREATED,
+      {
+        eventType: EventTypes.ORDER_CREATED,
+        payload: {
+          orderId: order.id,
+          userId: order.userId,
+          total: order.total,
+        },
+      },
+    );
 
     return order;
   }

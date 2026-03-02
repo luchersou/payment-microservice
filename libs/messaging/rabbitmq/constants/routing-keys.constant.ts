@@ -1,4 +1,5 @@
 export const RoutingKeys = {
+  CREATE_ORDER_REQUESTED: 'order.create.requested',
   ORDER_CREATED: 'order.created',
   ORDER_CANCELLED: 'order.cancelled',
   ORDER_CANCEL_REQUESTED: 'order.cancel.requested',
@@ -7,5 +8,6 @@ export const RoutingKeys = {
   PAYMENT_DECLINED: 'payment.declined',
   PAYMENT_FAILED: 'payment.failed',
 
-  PAYMENT_ALL: 'payment.*'
+  PAYMENT_ALL: 'payment.*',
+  ORDER_ALL: 'order.*'
 } as const;

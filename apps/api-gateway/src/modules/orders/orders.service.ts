@@ -27,15 +27,13 @@ export class OrdersService {
   }
 
   async createOrder(createOrderDto: CreateOrderDto) {
-    const orderId = uuidv4();
-    
+
     await this.rabbit.publish(
       Exchanges.ORDERS,
-      RoutingKeys.ORDER_CREATED,
+      RoutingKeys.CREATE_ORDER_REQUESTED,
       {
-        eventType: EventTypes.ORDER_CREATED,
+        eventType: EventTypes.CREATE_ORDER_REQUESTED,
         payload: {
-          orderId,
           userId: createOrderDto.userId,
           total: createOrderDto.total,
         },
@@ -43,9 +41,8 @@ export class OrdersService {
     );
 
     return {
-      orderId,
       message: 'Order creation request accepted',
-      status: 'PENDING_PAYMENT',
+      status: 'PENDING',
     };
   }
 

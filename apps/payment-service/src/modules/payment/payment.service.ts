@@ -10,11 +10,11 @@ import { PaymentDeclinedEvent } from '@contracts/events/payment-declined.event';
 import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
 
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
-import { v4 as uuid } from 'uuid';
 import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
 import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
 import { PrismaService } from '@payment/prisma/prisma.service';
+import { Payment } from '@payment/prisma/generated/prisma/client';
 
 @Injectable()
 export class PaymentService {
@@ -113,27 +113,33 @@ export class PaymentService {
   async handleOrderCreated(payload: OrderCreatedPayload) {
     this.logger.log(`💳 Processing payment for order ${payload.orderId}`);
 
+    let payment: Payment | null = null;
+
     try {
-      let payment = await this.prisma.payment.findUnique({
-        where: { orderId: payload.orderId },
-      });
-
-      if (payment) {
-        this.logger.warn(
-          `⚠️ Payment already exists with status ${payment.status} for order ${payload.orderId}`,
-        );
-        return;
-      }
-
       payment = await this.prisma.payment.create({
         data: {
-          id: uuid(),
           orderId: payload.orderId,
           amount: payload.total,
           status: PaymentStatus.PROCESSING,
         },
       });
 
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        this.logger.warn(
+          `⚠️ Payment already exists for order ${payload.orderId} (idempotent skip)`,
+        );
+        return;
+      }
+
+      this.logger.error(
+        `❌ Failed to create payment for order ${payload.orderId}`,
+        error,
+      );
+      throw error;
+    }
+
+    try {
       const result = await this.simulatePaymentGateway(payload.total);
 
       if (result.approved) {
@@ -145,6 +151,7 @@ export class PaymentService {
           result.reason ?? 'Payment declined',
         );
       }
+
     } catch (error) {
       this.logger.error(
         `❌ Unexpected error while processing payment for order ${payload.orderId}`,

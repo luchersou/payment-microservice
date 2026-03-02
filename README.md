@@ -230,23 +230,42 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 ### Create Order Flow
 ```
 1. Client → POST /api/orders
-2. API Gateway → Emit order.created event → RabbitMQ
-3. Order Service → Consume order.created → Save order (status: PENDING)
-4. Payment Service → Consume order.created → Create payment (status: PROCESSING)
-5. Payment Service → Simulate payment gateway → Approve/Decline
-6. Payment Service → Emit payment.approved/declined → RabbitMQ
-7. Order Service → Consume payment event → Update order (status: PAID/FAILED)
+2. API Gateway → Emit order.create.requested → RabbitMQ
+
+3. Order Service → Consume order.create.requested
+   - Generate orderId
+   - Persist order (status: PENDING_PAYMENT)
+   - Emit order.created → RabbitMQ
+
+4. Payment Service → Consume order.created
+   - Create payment (status: PROCESSING)
+   - Simulate payment gateway
+
+5. Payment Service → Emit:
+   - payment.approved
+   - OR payment.declined
+   - OR payment.failed
+
+6. Order Service → Consume payment event
+   - Update order status:
+     - APPROVED → PAID
+     - DECLINED → CANCELLED
+     - FAILED → FAILED
 ```
 
 ### Cancel Order Flow
-
+```
 1. Client → PATCH /api/orders/:id/cancel
-2. API Gateway → Emit order.cancel_requested event → RabbitMQ
-3. Order Service → Consume order.cancel_requested → Update order (status: CANCELLED)
-4. Payment Service → Consume order.cancel_requested → Handle refund/cancellation
+2. API Gateway → Emit order.cancel.requested → RabbitMQ
+
+3. Order Service → Consume order.cancel.requested
+   - Update order status → CANCELLED
+   - Emit order.cancelled → RabbitMQ
+
+4. Payment Service → Consume order.cancelled
    - If PROCESSING → Mark as CANCELLED
    - If APPROVED → Mark as REFUNDED
-
+```
 ---
 
 ## 🧪 Example Requests

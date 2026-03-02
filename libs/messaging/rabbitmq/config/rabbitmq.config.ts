@@ -49,10 +49,29 @@ export async function setupRabbitMQ(channel: Channel) {
   // ========================
   // MAIN BINDINGS
   // ========================
-  await channel.bindQueue(Queues.ORDER_PROCESS, Exchanges.ORDERS, RoutingKeys.ORDER_CREATED);
-  await channel.bindQueue(Queues.ORDER_PROCESS, Exchanges.ORDERS, RoutingKeys.ORDER_CANCEL_REQUESTED);
-  await channel.bindQueue(Queues.PAYMENT_RESULT, Exchanges.PAYMENTS, RoutingKeys.PAYMENT_ALL);
-  await channel.bindQueue(Queues.PAYMENT_PROCESS, Exchanges.ORDERS, 'order.*');
+  await channel.bindQueue(
+    Queues.ORDER_PROCESS,
+    Exchanges.ORDERS,
+    RoutingKeys.CREATE_ORDER_REQUESTED
+  );
+
+  await channel.bindQueue(
+    Queues.ORDER_PROCESS,
+    Exchanges.ORDERS,
+    RoutingKeys.ORDER_CANCEL_REQUESTED
+  );
+
+  await channel.bindQueue(
+    Queues.PAYMENT_PROCESS,
+    Exchanges.ORDERS,
+    RoutingKeys.ORDER_CREATED
+  );
+
+  await channel.bindQueue(
+    Queues.PAYMENT_RESULT,
+    Exchanges.PAYMENTS,
+    RoutingKeys.PAYMENT_ALL
+  );
 
   // ========================
   // DLX BINDINGS
