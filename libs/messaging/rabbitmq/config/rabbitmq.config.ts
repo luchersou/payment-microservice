@@ -68,6 +68,12 @@ export async function setupRabbitMQ(channel: Channel) {
   );
 
   await channel.bindQueue(
+    Queues.PAYMENT_PROCESS,
+    Exchanges.ORDERS,
+    RoutingKeys.ORDER_CANCELLED
+  );
+
+  await channel.bindQueue(
     Queues.PAYMENT_RESULT,
     Exchanges.PAYMENTS,
     RoutingKeys.PAYMENT_ALL

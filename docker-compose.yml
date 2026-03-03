@@ -46,12 +46,13 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   api-gateway:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/api-gateway/Dockerfile
@@ -68,6 +69,7 @@ services:
         condition: service_healthy
 
   order-service:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/order-service/Dockerfile
@@ -85,6 +87,7 @@ services:
         condition: service_healthy
 
   payment-service:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/payment-service/Dockerfile
