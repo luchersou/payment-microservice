@@ -1,7 +1,7 @@
 # 🧩 Payment Microservices System
 
 A backend project that demonstrates a **microservices architecture** using **NestJS**, **RabbitMQ**, **Docker**, **PostgreSQL**, and **Prisma ORM**.
-This project was built to showcase real-world backend architecture concepts such as **event-driven systems**, **CQRS pattern**, **asynchronous processing**, and **service separation**.
+This project was built to showcase real-world backend architecture concepts such as **event-driven systems**, **Saga pattern (Choreography)**, **asynchronous processing**, and **distributed transaction management**.
 
 ![NestJS](https://img.shields.io/badge/nestjs-%23E0234E.svg?style=for-the-badge&logo=nestjs&logoColor=white)
 ![RabbitMQ](https://img.shields.io/badge/Rabbitmq-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)
@@ -42,7 +42,7 @@ graph LR
 - **API Gateway**: Single entry point for all client requests (port 3000)
 - **Event-Driven Commands**: POST/PATCH operations emit events via RabbitMQ
 - **Synchronous Queries**: GET operations make direct HTTP calls to microservices
-- **CQRS Pattern**: Separation of Commands (write) and Queries (read)
+- **Saga Pattern (Choreography)**: Distributed transactions coordinated through events, with compensating actions for failures and cancellations
 - **Service Autonomy**: Each microservice has its own database and business logic
 - **Decoupled Communication**: Services communicate through events, not direct calls
 
@@ -132,16 +132,18 @@ payment-microservices/
 - Request timeout and retry logic
 
 ### ✅ Order Service
-* Manages order lifecycle (PENDING → PAID → CANCELLED → FAILED)
-* Consumes order.created and order.cancel_requested events to persist order state
-* Consumes payment.approved, payment.declined, payment.failed events to update order status
+* Manages order lifecycle (PENDING_PAYMENT → PAID → CANCELLED → FAILED)
+* Consumes `order.create.requested` and `order.cancel.requested` events to persist order state
+* Consumes `payment.approved`, `payment.declined`, `payment.failed` events to update order status
+* Emits `order.created` and `order.cancelled` events to trigger downstream reactions
 * RESTful API for order queries (GET endpoints)
 * Isolated PostgreSQL database
 
 ### ✅ Payment Service
-* Manages payment processing (PROCESSING → APPROVED/DECLINED/FAILED/REFUNDED/CANCELLED)
-* Consumes order.created event to initiate payment processing
-* Emits payment.approved, payment.declined, payment.failed events based on processing result
+* Manages payment lifecycle (PROCESSING → APPROVED / DECLINED / FAILED / REFUNDED / CANCELLED)
+* Consumes `order.created` event to initiate payment processing
+* Consumes `order.cancelled` event to cancel or refund payments in progress
+* Emits `payment.approved`, `payment.declined`, `payment.failed` events based on processing result
 * Simulates payment gateway integration with approval/decline logic
 * Provides payment statistics and queries
 * Isolated PostgreSQL database
@@ -152,10 +154,11 @@ payment-microservices/
 - Event replay and idempotency handling
 - Durable queues and persistent messages
 
-### ✅ CQRS Pattern
-- **Commands** (POST/PATCH): Processed asynchronously via events
-- **Queries** (GET): Processed synchronously via HTTP
-- Optimized for performance and scalability
+### ✅ Saga Pattern (Choreography)
+- **Happy path**: `order.create.requested` → `order.created` → `payment.approved` → order marked as PAID
+- **Failure path**: `payment.declined` / `payment.failed` → order marked as CANCELLED / FAILED
+- **Compensating transaction**: `order.cancel.requested` → `order.cancelled` → payment marked as CANCELLED or REFUNDED
+- No central coordinator — each service reacts to events and emits its own
 
 ---
 
@@ -506,8 +509,8 @@ curl http://localhost:3000/api/payments/stats
 
 - **Microservices Architecture**: Independent services with isolated databases
 - **API Gateway Pattern**: Single entry point for client requests
-- **Event-Driven Architecture**: Asynchronous communication via events
-- **CQRS (Command Query Responsibility Segregation)**: Separate read and write operations
+- **Event-Driven Architecture**: Asynchronous communication via RabbitMQ
+- **Saga Pattern (Choreography)**: Distributed transactions with compensating actions across services
 
 ---
 
