@@ -1,6 +1,7 @@
-import { BaseEvent } from './base.event';
-import { EventTypes } from '@contracts/types/event-types.enum';
 import { CancelReason } from '@contracts/types/cancel-reason.enum';
+import { EventTypes } from '@contracts/types/event-types.enum';
+
+import { BaseEvent } from './base.event';
 
 export interface OrderCancelledPayload {
   orderId: string;

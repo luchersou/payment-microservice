@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { OrderService } from './order.service';
+
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
+import { OrderService } from './order.service';
 
 @Controller('orders')
 export class OrdersController {
@@ -19,7 +20,7 @@ export class OrdersController {
 
   @Get(':id')
   async findOne(@Param('id') id: string) {
-    const order = await this.orderService.findOne(id);    
+    const order = await this.orderService.findOne(id);
     return order;
   }
 }

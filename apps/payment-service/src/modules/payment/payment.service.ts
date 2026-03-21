@@ -1,20 +1,20 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
+import { Payment } from '@payment/prisma/generated/prisma/client';
+import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
+import { PrismaService } from '@payment/prisma/prisma.service';
+
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-
-import { OrderCreatedPayload } from '@contracts/events/order-created.event';
+import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
 import { OrderCancelledPayload } from '@contracts/events/order-cancelled.event';
+import { OrderCreatedPayload } from '@contracts/events/order-created.event';
 import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
 import { PaymentDeclinedEvent } from '@contracts/events/payment-declined.event';
 import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
 
-import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
-import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
-import { PrismaService } from '@payment/prisma/prisma.service';
-import { Payment } from '@payment/prisma/generated/prisma/client';
+import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
 
 @Injectable()
 export class PaymentService {
@@ -25,7 +25,10 @@ export class PaymentService {
     private readonly rabbitMQService: RabbitMQService,
   ) {}
 
-  async findAll(page: number, limit: number): Promise<PaginatedPaymentsResponseDto> {
+  async findAll(
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPaymentsResponseDto> {
     const skip = (page - 1) * limit;
 
     const [payments, total] = await Promise.all([
@@ -38,7 +41,7 @@ export class PaymentService {
     ]);
 
     return {
-      data: payments.map(payment => ({
+      data: payments.map((payment) => ({
         id: payment.id,
         orderId: payment.orderId,
         amount: payment.amount,
@@ -54,7 +57,6 @@ export class PaymentService {
       },
     };
   }
-
 
   async findOne(id: string): Promise<PaymentResponseDto> {
     const payment = await this.prisma.payment.findUnique({
@@ -123,7 +125,6 @@ export class PaymentService {
           status: PaymentStatus.PROCESSING,
         },
       });
-
     } catch (error: any) {
       if (error.code === 'P2002') {
         this.logger.warn(
@@ -151,7 +152,6 @@ export class PaymentService {
           result.reason ?? 'Payment declined',
         );
       }
-
     } catch (error) {
       this.logger.error(
         `❌ Unexpected error while processing payment for order ${payload.orderId}`,
@@ -170,9 +170,7 @@ export class PaymentService {
     });
 
     if (!payment) {
-      this.logger.warn(
-        `⚠️ No payment found for order ${payload.orderId}`,
-      );
+      this.logger.warn(`⚠️ No payment found for order ${payload.orderId}`);
       return;
     }
 
@@ -206,15 +204,11 @@ export class PaymentService {
 
       case PaymentStatus.DECLINED:
       case PaymentStatus.FAILED:
-        this.logger.warn(
-          `⚠️ Payment ${payment.id} already ${payment.status}`,
-        );
+        this.logger.warn(`⚠️ Payment ${payment.id} already ${payment.status}`);
         return;
 
       default:
-        this.logger.warn(
-          `⚠️ Unknown payment status ${payment.status}`,
-        );
+        this.logger.warn(`⚠️ Unknown payment status ${payment.status}`);
     }
   }
 
@@ -296,7 +290,6 @@ export class PaymentService {
     this.logger.warn(`⚠️ Payment declined for order ${orderId}`);
   }
 
-
   private async failPayment(orderId: string, error: any) {
     this.logger.error(`❌ Payment failed for order ${orderId}`, error);
 
@@ -325,7 +318,6 @@ export class PaymentService {
     );
   }
 
-
   // ─────────────────────────────────────────────
   // SIMULATED PAYMENT GATEWAY
   // ─────────────────────────────────────────────
@@ -333,7 +325,6 @@ export class PaymentService {
   private async simulatePaymentGateway(
     amount: number,
   ): Promise<{ approved: boolean; reason?: string }> {
-
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     const random = Math.random();

@@ -1,11 +1,12 @@
 import {
   Controller,
   Get,
-  Param,
-  Query,
   HttpCode,
   HttpStatus,
+  Param,
+  Query,
 } from '@nestjs/common';
+
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
@@ -14,10 +15,7 @@ export class PaymentsController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAll(
-    @Query('page') page = '1',
-    @Query('limit') limit = '10',
-  ) {
+  async findAll(@Query('page') page = '1', @Query('limit') limit = '10') {
     const pageNumber = Math.max(1, parseInt(page, 10) || 1);
     const limitNumber = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
 

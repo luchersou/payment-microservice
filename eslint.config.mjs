@@ -3,6 +3,7 @@ import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import simpleImportSort from 'eslint-plugin-simple-import-sort';
 
 export default tseslint.config(
   {
@@ -12,6 +13,9 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
   {
+    plugins: {
+      'simple-import-sort': simpleImportSort,
+    },
     languageOptions: {
       globals: {
         ...globals.node,
@@ -26,10 +30,24 @@ export default tseslint.config(
   },
   {
     rules: {
+      'simple-import-sort/imports': [
+        'error',
+        {
+          groups: [
+            ['^@nestjs', '^@?\\w'],
+
+            ['^@messaging', '^@contracts'],
+
+            ['^\\.'],
+          ],
+        },
+      ],
+      'simple-import-sort/exports': 'error',
+
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 );

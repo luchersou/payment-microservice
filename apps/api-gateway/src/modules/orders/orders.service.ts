@@ -1,16 +1,15 @@
-import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { CreateOrderDto } from './dto/create-order.dto';
-import { makeHttpRequest } from '../../common/http-client.helper';
-
-import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-
+import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
 import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
 import { OrderCancelRequestedEvent } from '@contracts/events/order-cancel-requested.event';
+
+import { makeHttpRequest } from '../../common/http-client.helper';
+import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
 export class OrdersService {
@@ -26,7 +25,10 @@ export class OrdersService {
       'ORDER_SERVICE_URL',
       'http://localhost:3001',
     );
-    this.requestTimeout = this.configService.get<number>('REQUEST_TIMEOUT', 5000);
+    this.requestTimeout = this.configService.get<number>(
+      'REQUEST_TIMEOUT',
+      5000,
+    );
   }
 
   async createOrder(createOrderDto: CreateOrderDto) {
@@ -38,7 +40,7 @@ export class OrdersService {
     await this.rabbit.publish(
       Exchanges.ORDERS,
       RoutingKeys.CREATE_ORDER_REQUESTED,
-      event
+      event,
     );
 
     return {

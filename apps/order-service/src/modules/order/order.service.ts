@@ -1,19 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { OrderStatus } from '@order/prisma/generated/prisma/client';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
+import { OrderStatus } from '@order/prisma/generated/prisma/client';
+import { Order } from '@order/prisma/generated/prisma/client';
+import { PrismaService } from '@order/prisma/prisma.service';
+import { randomUUID } from 'crypto';
+
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
 import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
-import { PrismaService } from '@order/prisma/prisma.service';
-import { Order } from '@order/prisma/generated/prisma/client';
+import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
+import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
+import { OrderCreatedEvent } from '@contracts/events/order-created.event';
+import { CancelReason } from '@contracts/types/cancel-reason.enum';
+
 import { OrderResponseDto } from './dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
-import { CancelReason } from '@contracts/types/cancel-reason.enum';
-import { EventTypes } from '@contracts/types/event-types.enum';
-import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
-import { randomUUID } from 'crypto';
-import { OrderCreatedEvent } from '@contracts/events/order-created.event';
-import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 
 @Injectable()
 export class OrderService {
@@ -24,7 +25,10 @@ export class OrderService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async findAll(page: number, limit: number): Promise<PaginatedOrdersResponseDto> {
+  async findAll(
+    page: number,
+    limit: number,
+  ): Promise<PaginatedOrdersResponseDto> {
     const skip = (page - 1) * limit;
 
     const [orders, total] = await Promise.all([
@@ -37,7 +41,7 @@ export class OrderService {
     ]);
 
     return {
-      data: orders.map(order => ({
+      data: orders.map((order) => ({
         id: order.id,
         userId: order.userId,
         total: order.total,
@@ -74,7 +78,6 @@ export class OrderService {
   }
 
   async createOrder(payload: CreateOrderRequestedPayload) {
-
     const orderId = randomUUID();
 
     const order = await this.prisma.order.create({
@@ -171,10 +174,7 @@ export class OrderService {
     });
   }
 
-  private async cancelOrderInternal(
-    orderId: string,
-    reason: CancelReason,
-  ) {
+  private async cancelOrderInternal(orderId: string, reason: CancelReason) {
     this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
 
     const order = await this.waitForOrder(orderId);
@@ -205,20 +205,18 @@ export class OrderService {
     });
 
     const event = new OrderCancelledEvent({
-    orderId: updatedOrder.id,
-    reason,
-    cancelledAt: new Date(),
-  });
+      orderId: updatedOrder.id,
+      reason,
+      cancelledAt: new Date(),
+    });
 
-  await this.rabbit.publish(
-    Exchanges.ORDERS,
-    RoutingKeys.ORDER_CANCELLED,
-    event,
-  );
-
-    this.logger.log(
-      `✅ Order ${orderId} updated to ${newStatus} successfully`,
+    await this.rabbit.publish(
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CANCELLED,
+      event,
     );
+
+    this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);
 
     return updatedOrder;
   }

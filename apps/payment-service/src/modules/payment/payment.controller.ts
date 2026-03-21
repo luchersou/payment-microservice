@@ -1,8 +1,9 @@
-import { Controller, Get, Query, Param } from '@nestjs/common';
-import { PaymentService } from './payment.service';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+
 import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
-import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
+import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
+import { PaymentService } from './payment.service';
 
 @Controller('payments')
 export class PaymentsController {
@@ -30,7 +31,9 @@ export class PaymentsController {
   }
 
   @Get('order/:orderId')
-  async findByOrder(@Param('orderId') orderId: string): Promise<PaymentResponseDto> {
+  async findByOrder(
+    @Param('orderId') orderId: string,
+  ): Promise<PaymentResponseDto> {
     return this.paymentService.findByOrderId(orderId);
   }
 }

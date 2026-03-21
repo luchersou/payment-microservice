@@ -1,9 +1,16 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import * as amqp from 'amqplib';
 import { Channel, Connection } from 'amqplib';
-import { setupRabbitMQ } from './config/rabbitmq.config';
+
 import { BaseEvent } from '@contracts/events/base.event';
 import { EventTypes } from '@contracts/types/event-types.enum';
+
+import { setupRabbitMQ } from './config/rabbitmq.config';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
@@ -15,7 +22,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     await this.connect();
   }
 
- private async connect() {
+  private async connect() {
     if (this.connection && this.channel) return;
 
     const url = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
@@ -30,7 +37,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
 
       this.connection.on('close', () => {
         this.logger.warn('RabbitMQ connection closed. Reconnecting...');
-        setTimeout(() => this.connect(), 5000); 
+        setTimeout(() => this.connect(), 5000);
       });
 
       await this.channel.prefetch(10);
@@ -39,7 +46,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('RabbitMQ connected and configured ✅');
     } catch (error) {
       this.logger.error('Failed to connect to RabbitMQ:', error);
-      setTimeout(() => this.connect(), 5000); 
+      setTimeout(() => this.connect(), 5000);
     }
   }
 
@@ -71,7 +78,6 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     queue: string,
     handler: (message: T) => Promise<void>,
   ): Promise<void> {
-
     await this.channel.consume(queue, async (msg) => {
       if (!msg) return;
 

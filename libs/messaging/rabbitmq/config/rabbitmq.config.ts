@@ -1,7 +1,8 @@
+import { Channel } from 'amqplib';
+
+import { DLQ } from '../constants/dlq.constant';
 import { Exchanges } from '../constants/exchanges.constant';
 import { Queues } from '../constants/queues.constant';
-import { DLQ } from '../constants/dlq.constant';
-import { Channel } from 'amqplib';
 import { RoutingKeys } from '../constants/routing-keys.constant';
 
 export async function setupRabbitMQ(channel: Channel) {
@@ -52,37 +53,45 @@ export async function setupRabbitMQ(channel: Channel) {
   await channel.bindQueue(
     Queues.ORDER_PROCESS,
     Exchanges.ORDERS,
-    RoutingKeys.CREATE_ORDER_REQUESTED
+    RoutingKeys.CREATE_ORDER_REQUESTED,
   );
 
   await channel.bindQueue(
     Queues.ORDER_PROCESS,
     Exchanges.ORDERS,
-    RoutingKeys.ORDER_CANCEL_REQUESTED
+    RoutingKeys.ORDER_CANCEL_REQUESTED,
   );
 
   await channel.bindQueue(
     Queues.PAYMENT_PROCESS,
     Exchanges.ORDERS,
-    RoutingKeys.ORDER_CREATED
+    RoutingKeys.ORDER_CREATED,
   );
 
   await channel.bindQueue(
     Queues.PAYMENT_PROCESS,
     Exchanges.ORDERS,
-    RoutingKeys.ORDER_CANCELLED
+    RoutingKeys.ORDER_CANCELLED,
   );
 
   await channel.bindQueue(
     Queues.PAYMENT_RESULT,
     Exchanges.PAYMENTS,
-    RoutingKeys.PAYMENT_ALL
+    RoutingKeys.PAYMENT_ALL,
   );
 
   // ========================
   // DLX BINDINGS
   // ========================
   await channel.bindQueue(DLQ.ORDER_PROCESS, Exchanges.DLX, DLQ.ORDER_PROCESS);
-  await channel.bindQueue(DLQ.PAYMENT_PROCESS, Exchanges.DLX, DLQ.PAYMENT_PROCESS);
-  await channel.bindQueue(DLQ.PAYMENT_RESULT, Exchanges.DLX, DLQ.PAYMENT_RESULT);
+  await channel.bindQueue(
+    DLQ.PAYMENT_PROCESS,
+    Exchanges.DLX,
+    DLQ.PAYMENT_PROCESS,
+  );
+  await channel.bindQueue(
+    DLQ.PAYMENT_RESULT,
+    Exchanges.DLX,
+    DLQ.PAYMENT_RESULT,
+  );
 }

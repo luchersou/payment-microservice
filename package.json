@@ -11,35 +11,27 @@
     "build:payment-service": "nest build payment-service",
     "build:libs": "nest build messaging",
     "build": "npm run build:libs && npm run build:api-gateway && npm run build:order-service && npm run build:payment-service",
-    
     "start:dev": "concurrently \"npm run start:api-gateway:dev\" \"npm run start:order:dev\" \"npm run start:payment:dev\"",
-    
     "start:api-gateway": "nest start api-gateway",
     "start:api-gateway:dev": "nest start api-gateway --watch",
     "start:order": "nest start order-service",
     "start:order:dev": "nest start order-service --watch",
     "start:payment": "nest start payment-service",
     "start:payment:dev": "nest start payment-service --watch",
-    
     "start:prod:api-gateway": "node dist/apps/api-gateway/main.js",
     "start:prod:order": "node dist/apps/order-service/main.js",
     "start:prod:payment": "node dist/apps/payment-service/main.js",
-    
     "prisma:generate": "prisma generate --schema=./libs/database/prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=./libs/database/prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=./libs/database/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=./libs/database/prisma/schema.prisma",
-    
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
     "docker:restart": "docker-compose restart",
     "docker:clean": "docker-compose down -v",
-    
-    "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
-    "format": "prettier --write \"{apps,libs}/**/*.ts\"",
-    
+    "lint": "eslint \"{apps,libs}/**/*.{ts,js}\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
@@ -77,6 +69,7 @@
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
     "globals": "^16.0.0",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",

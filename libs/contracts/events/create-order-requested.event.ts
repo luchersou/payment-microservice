@@ -7,6 +7,5 @@ export interface CreateOrderRequestedPayload {
 }
 
 export class CreateOrderRequestedEvent extends BaseEvent<CreateOrderRequestedPayload> {
-
   readonly eventType = EventTypes.CREATE_ORDER_REQUESTED;
 }

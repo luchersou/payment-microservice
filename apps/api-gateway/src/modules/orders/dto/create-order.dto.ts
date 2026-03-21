@@ -1,4 +1,4 @@
-import { IsUUID, IsPositive, IsNumber } from 'class-validator';
+import { IsNumber, IsPositive, IsUUID } from 'class-validator';
 
 export class CreateOrderDto {
   @IsUUID()

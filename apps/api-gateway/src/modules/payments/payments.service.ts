@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
 import { makeHttpRequest } from '../../common/http-client.helper';
 
 @Injectable()
@@ -16,7 +17,10 @@ export class PaymentsService {
       'PAYMENT_SERVICE_URL',
       'http://payment-service:3002',
     );
-    this.requestTimeout = this.configService.get<number>('REQUEST_TIMEOUT', 5000);
+    this.requestTimeout = this.configService.get<number>(
+      'REQUEST_TIMEOUT',
+      5000,
+    );
   }
 
   async findAll(page: number, limit: number) {

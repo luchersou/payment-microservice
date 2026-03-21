@@ -1,4 +1,4 @@
-import { EventTypes } from "@contracts/types/event-types.enum";
+import { EventTypes } from '@contracts/types/event-types.enum';
 
 export abstract class BaseEvent<T> {
   abstract readonly eventType: EventTypes;
