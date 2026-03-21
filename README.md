@@ -158,7 +158,7 @@ payment-microservices/
 - **Happy path**: `order.create.requested` → `order.created` → `payment.approved` → order marked as PAID
 - **Failure path**: `payment.declined` / `payment.failed` → order marked as CANCELLED / FAILED
 - **Compensating transaction**: `order.cancel.requested` → `order.cancelled` → payment marked as CANCELLED or REFUNDED
-- No central coordinator — each service reacts to events and emits its own
+- **No central coordinator** — each service reacts to events and emits its own
 
 ---
 

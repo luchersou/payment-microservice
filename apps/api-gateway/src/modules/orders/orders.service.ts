@@ -1,13 +1,16 @@
-import { Injectable} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+
 import { CreateOrderDto } from './dto/create-order.dto';
+import { makeHttpRequest } from '../../common/http-client.helper';
+
+import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
-import { EventTypes } from '@contracts/types/event-types.enum';
-import { v4 as uuidv4 } from 'uuid';
-import { makeHttpRequest } from '../../common/http-client.helper';
-import { ConfigService } from '@nestjs/config';
+
+import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
+import { OrderCancelRequestedEvent } from '@contracts/events/order-cancel-requested.event';
 
 @Injectable()
 export class OrdersService {
@@ -27,17 +30,15 @@ export class OrdersService {
   }
 
   async createOrder(createOrderDto: CreateOrderDto) {
+    const event = new CreateOrderRequestedEvent({
+      userId: createOrderDto.userId,
+      total: createOrderDto.total,
+    });
 
     await this.rabbit.publish(
       Exchanges.ORDERS,
       RoutingKeys.CREATE_ORDER_REQUESTED,
-      {
-        eventType: EventTypes.CREATE_ORDER_REQUESTED,
-        payload: {
-          userId: createOrderDto.userId,
-          total: createOrderDto.total,
-        },
-      }
+      event
     );
 
     return {
@@ -47,13 +48,14 @@ export class OrdersService {
   }
 
   async cancelOrder(orderId: string) {
+    const event = new OrderCancelRequestedEvent({
+      orderId,
+    });
+
     await this.rabbit.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCEL_REQUESTED,
-      {
-        eventType: EventTypes.ORDER_CANCEL_REQUESTED,
-        payload: { orderId },
-      },
+      event,
     );
 
     return {

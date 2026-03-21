@@ -2,6 +2,8 @@ import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/commo
 import * as amqp from 'amqplib';
 import { Channel, Connection } from 'amqplib';
 import { setupRabbitMQ } from './config/rabbitmq.config';
+import { BaseEvent } from '@contracts/events/base.event';
+import { EventTypes } from '@contracts/types/event-types.enum';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
@@ -41,10 +43,10 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async publish<T>(
+  async publish<TPayload>(
     exchange: string,
     routingKey: string,
-    message: T,
+    message: BaseEvent<TPayload>,
   ): Promise<void> {
     const success = this.channel.publish(
       exchange,
@@ -65,7 +67,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async consume<T>(
+  async consume<T extends { eventType: EventTypes }>(
     queue: string,
     handler: (message: T) => Promise<void>,
   ): Promise<void> {

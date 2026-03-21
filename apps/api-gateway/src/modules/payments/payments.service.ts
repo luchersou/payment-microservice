@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { makeHttpRequest } from '../../common/http-client.helper';
@@ -20,34 +20,34 @@ export class PaymentsService {
   }
 
   async findAll(page: number, limit: number) {
-  return makeHttpRequest(
-    this.http.get(`${this.baseUrl}/payments`, {
-      params: { page, limit },
-    }),
-    this.requestTimeout,
-  );
-}
+    return makeHttpRequest(
+      this.http.get(`${this.baseUrl}/payments`, {
+        params: { page, limit },
+      }),
+      this.requestTimeout,
+    );
+  }
 
-async getPaymentStats() {
-  return makeHttpRequest(
-    this.http.get(`${this.baseUrl}/payments/stats`),
-    this.requestTimeout,
-  );
-}
+  async getPaymentStats() {
+    return makeHttpRequest(
+      this.http.get(`${this.baseUrl}/payments/stats`),
+      this.requestTimeout,
+    );
+  }
 
-async findOne(id: string) {
-  return makeHttpRequest(
-    this.http.get(`${this.baseUrl}/payments/${id}`),
-    this.requestTimeout,
-    `Payment ${id} not found`,
-  );
-}
+  async findOne(id: string) {
+    return makeHttpRequest(
+      this.http.get(`${this.baseUrl}/payments/${id}`),
+      this.requestTimeout,
+      `Payment ${id} not found`,
+    );
+  }
 
-async findByOrderId(orderId: string) {
-  return makeHttpRequest(
-    this.http.get(`${this.baseUrl}/payments/order/${orderId}`),
-    this.requestTimeout,
-    `Payment for order ${orderId} not found`,
-  );
-}
+  async findByOrderId(orderId: string) {
+    return makeHttpRequest(
+      this.http.get(`${this.baseUrl}/payments/order/${orderId}`),
+      this.requestTimeout,
+      `Payment for order ${orderId} not found`,
+    );
+  }
 }

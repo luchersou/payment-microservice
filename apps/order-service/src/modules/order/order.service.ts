@@ -12,6 +12,8 @@ import { CancelReason } from '@contracts/types/cancel-reason.enum';
 import { EventTypes } from '@contracts/types/event-types.enum';
 import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
 import { randomUUID } from 'crypto';
+import { OrderCreatedEvent } from '@contracts/events/order-created.event';
+import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 
 @Injectable()
 export class OrderService {
@@ -86,17 +88,16 @@ export class OrderService {
 
     this.logger.log(`✅ Order ${order.id} persisted`);
 
+    const event = new OrderCreatedEvent({
+      orderId: order.id,
+      userId: order.userId,
+      total: order.total,
+    });
+
     await this.rabbit.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
-      {
-        eventType: EventTypes.ORDER_CREATED,
-        payload: {
-          orderId: order.id,
-          userId: order.userId,
-          total: order.total,
-        },
-      },
+      event,
     );
 
     return order;
@@ -203,18 +204,17 @@ export class OrderService {
       },
     });
 
-    await this.rabbit.publish(
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
-      {
-        eventType: EventTypes.ORDER_CANCELLED,
-        payload: {
-          orderId: updatedOrder.id,
-          reason,
-          cancelledAt: new Date(),
-        },
-      },
-    );
+    const event = new OrderCancelledEvent({
+    orderId: updatedOrder.id,
+    reason,
+    cancelledAt: new Date(),
+  });
+
+  await this.rabbit.publish(
+    Exchanges.ORDERS,
+    RoutingKeys.ORDER_CANCELLED,
+    event,
+  );
 
     this.logger.log(
       `✅ Order ${orderId} updated to ${newStatus} successfully`,
