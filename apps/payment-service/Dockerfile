@@ -15,4 +15,4 @@ RUN npm run build:payment-service
 WORKDIR /app/apps/payment-service
 
 EXPOSE 3002
-CMD ["sh", "-c", "npx prisma migrate deploy && node /app/dist/apps/payment-service/apps/payment-service/src/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node /app/dist/apps/payment-service/src/main.js"]
