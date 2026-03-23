@@ -100,6 +100,9 @@ payment-microservices/
 ├── libs/
 │   ├── contracts/                   # Shared contracts
 │   │   ├── events/                  # Event definitions
+│   │   │   ├── base.event.ts
+│   │   │   ├── create-order-requested.event.ts
+│   │   │   ├── order-cancel-requested.event.ts
 │   │   │   ├── order-created.event.ts
 │   │   │   ├── order-cancelled.event.ts
 │   │   │   ├── payment-approved.event.ts
