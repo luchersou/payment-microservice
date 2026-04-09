@@ -10,9 +10,13 @@ COPY apps ./apps
 COPY libs ./libs
 
 RUN npm install
+
+RUN npx prisma generate --schema=apps/order-service/prisma/schema.prisma
+
 RUN npm run build:order-service
 
 WORKDIR /app/apps/order-service
 
 EXPOSE 3001
+
 CMD ["sh", "-c", "npx prisma migrate deploy && node /app/dist/apps/order-service/src/main.js"]
