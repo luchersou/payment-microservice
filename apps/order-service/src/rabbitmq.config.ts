@@ -8,8 +8,22 @@ import { Queues } from '@messaging/rabbitmq/constants/queues.constant';
 export const orderRabbitmqConfig: RabbitMQConfig = {
   ...(rabbitmqBaseConfig as RabbitMQConfig),
 
+  exchanges: [
+    {
+      name: Exchanges.ORDERS,
+      type: 'topic',
+    },
+    {
+      name: Exchanges.PAYMENTS,
+      type: 'topic',
+    },
+    {
+      name: Exchanges.DLX,
+      type: 'topic',
+    },
+  ],
+
   queues: [
-    // Main queues
     {
       name: Queues.ORDER_PROCESS,
       options: {
@@ -21,18 +35,22 @@ export const orderRabbitmqConfig: RabbitMQConfig = {
       },
     },
     {
-      name: Queues.PAYMENT_RESULT,
+      name: 'order.payment-result.queue', 
       options: {
         durable: true,
         arguments: {
           'x-dead-letter-exchange': Exchanges.DLX,
-          'x-dead-letter-routing-key': DLQ.PAYMENT_RESULT,
+          'x-dead-letter-routing-key': 'dlq.order.payment-result',
         },
       },
     },
-
-    // DLQs
-    { name: DLQ.ORDER_PROCESS, options: { durable: true } },
-    { name: DLQ.PAYMENT_RESULT, options: { durable: true } },
+    {
+      name: DLQ.ORDER_PROCESS,
+      options: { durable: true },
+    },
+    {
+      name: 'dlq.order.payment-result',
+      options: { durable: true },
+    },
   ],
 };

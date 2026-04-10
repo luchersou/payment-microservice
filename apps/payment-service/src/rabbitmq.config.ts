@@ -8,8 +8,18 @@ import { Queues } from '@messaging/rabbitmq/constants/queues.constant';
 export const paymentRabbitmqConfig: RabbitMQConfig = {
   ...(rabbitmqBaseConfig as RabbitMQConfig),
 
+  exchanges: [
+    {
+      name: Exchanges.PAYMENTS,
+      type: 'topic',
+    },
+    {
+      name: Exchanges.DLX,
+      type: 'topic',
+    },
+  ],
+
   queues: [
-    // Main queue
     {
       name: Queues.PAYMENT_PROCESS,
       options: {
@@ -20,8 +30,11 @@ export const paymentRabbitmqConfig: RabbitMQConfig = {
         },
       },
     },
-
-    // DLQ
-    { name: DLQ.PAYMENT_PROCESS, options: { durable: true } },
+    {
+      name: DLQ.PAYMENT_PROCESS,
+      options: {
+        durable: true,
+      },
+    },
   ],
 };

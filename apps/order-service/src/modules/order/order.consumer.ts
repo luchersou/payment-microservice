@@ -43,13 +43,13 @@ export class OrderConsumer {
   }
 
   // ========================
-  // PAYMENT RESULT QUEUE
+  // PAYMENT RESULT (ORDER QUEUE) 
   // ========================
 
   @RabbitSubscribe({
     exchange: Exchanges.PAYMENTS,
     routingKey: RoutingKeys.PAYMENT_ALL,
-    queue: Queues.PAYMENT_RESULT,
+    queue: Queues.ORDER_PAYMENT_RESULT, 
   })
   async handlePaymentApproved(event: PaymentApprovedEvent) {
     this.logger.log(`📥 Received PaymentApproved for order ${event.payload.orderId}`);
@@ -59,7 +59,7 @@ export class OrderConsumer {
   @RabbitSubscribe({
     exchange: Exchanges.PAYMENTS,
     routingKey: RoutingKeys.PAYMENT_ALL,
-    queue: Queues.PAYMENT_RESULT,
+    queue: Queues.ORDER_PAYMENT_RESULT, 
   })
   async handlePaymentDeclined(event: PaymentDeclinedEvent) {
     this.logger.log(`📥 Received PaymentDeclined for order ${event.payload.orderId}`);
@@ -69,7 +69,7 @@ export class OrderConsumer {
   @RabbitSubscribe({
     exchange: Exchanges.PAYMENTS,
     routingKey: RoutingKeys.PAYMENT_ALL,
-    queue: Queues.PAYMENT_RESULT,
+    queue: Queues.ORDER_PAYMENT_RESULT, 
   })
   async handlePaymentFailed(event: PaymentFailedEvent) {
     this.logger.log(`📥 Received PaymentFailed for order ${event.payload.orderId}`);
