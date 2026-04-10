@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import * as amqp from 'amqplib';
-import { Channel, Connection } from 'amqplib';
+import { Channel, ChannelModel } from 'amqplib';
 
 import { BaseEvent } from '@contracts/events/base.event';
 import { EventTypes } from '@contracts/types/event-types.enum';
@@ -14,7 +14,7 @@ import { setupRabbitMQ } from './config/rabbitmq.config';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
-  private connection: Connection | null = null;
+  private connection: ChannelModel | null = null; 
   private channel: Channel | null = null;
   private connecting: Promise<void> | null = null;
 
@@ -155,6 +155,6 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.channel?.close();
-    await this.connection?.close();
+    await this.connection?.close(); 
   }
 }
