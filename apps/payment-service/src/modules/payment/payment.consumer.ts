@@ -1,47 +1,37 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 
+import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { Queues } from '@messaging/rabbitmq/constants/queues.constant';
-import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
-import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
+import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
 import { OrderCreatedEvent } from '@contracts/events/order-created.event';
-import { EventTypes } from '@contracts/types/event-types.enum';
+import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 
 import { PaymentService } from './payment.service';
 
-type OrderDomainEvents = OrderCreatedEvent | OrderCancelledEvent;
-
 @Injectable()
-export class PaymentConsumer implements OnModuleInit {
+export class PaymentConsumer {
   private readonly logger = new Logger(PaymentConsumer.name);
 
-  constructor(
-    private readonly rabbit: RabbitMQService,
-    private readonly paymentService: PaymentService,
-  ) {}
+  constructor(private readonly paymentService: PaymentService) {}
 
-  async onModuleInit() {
-    await this.rabbit.consume<OrderDomainEvents>(
-      Queues.PAYMENT_PROCESS,
-      async (event) => {
-        switch (event.eventType) {
-          case EventTypes.ORDER_CREATED:
-            this.logger.log(
-              `📥 Received OrderCreated: ${event.payload.orderId}`,
-            );
-            await this.paymentService.handleOrderCreated(event.payload);
-            break;
+  @RabbitSubscribe({
+    exchange: Exchanges.ORDERS,
+    routingKey: RoutingKeys.ORDER_CREATED,
+    queue: Queues.PAYMENT_PROCESS,
+  })
+  async handleOrderCreated(event: OrderCreatedEvent) {
+    this.logger.log(`📥 Received OrderCreated: ${event.payload.orderId}`);
+    await this.paymentService.handleOrderCreated(event.payload);
+  }
 
-          case EventTypes.ORDER_CANCELLED:
-            this.logger.log(
-              `📥 Received OrderCancelled: ${event.payload.orderId}`,
-            );
-            await this.paymentService.handleOrderCancelled(event.payload);
-            break;
-
-          default:
-            this.logger.warn(`⚠️ Unknown event type: ${event}`);
-        }
-      },
-    );
+  @RabbitSubscribe({
+    exchange: Exchanges.ORDERS,
+    routingKey: RoutingKeys.ORDER_CANCELLED,
+    queue: Queues.PAYMENT_PROCESS,
+  })
+  async handleOrderCancelled(event: OrderCancelledEvent) {
+    this.logger.log(`📥 Received OrderCancelled: ${event.payload.orderId}`);
+    await this.paymentService.handleOrderCancelled(event.payload);
   }
 }

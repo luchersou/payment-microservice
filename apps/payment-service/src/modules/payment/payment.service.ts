@@ -5,7 +5,7 @@ import { PrismaService } from '@payment/prisma/prisma.service';
 
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { OrderCancelledPayload } from '@contracts/events/order-cancelled.event';
 import { OrderCreatedPayload } from '@contracts/events/order-created.event';
 import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
@@ -22,7 +22,7 @@ export class PaymentService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly rabbitMQService: RabbitMQService,
+    private readonly amqpConnection: AmqpConnection,
   ) {}
 
   async findAll(
@@ -240,7 +240,7 @@ export class PaymentService {
       transactionId: paymentId,
     });
 
-    await this.rabbitMQService.publish(
+    await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_APPROVED,
       event,
@@ -281,7 +281,7 @@ export class PaymentService {
       reason: reason ?? 'Insufficient funds',
     });
 
-    await this.rabbitMQService.publish(
+    await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_DECLINED,
       event,
@@ -311,7 +311,7 @@ export class PaymentService {
       error: error?.message ?? 'Unknown error',
     });
 
-    await this.rabbitMQService.publish(
+    await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_FAILED,
       event,
