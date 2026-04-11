@@ -8,7 +8,6 @@ import { OrdersService } from './orders.service';
 @Module({
   imports: [
     HttpModule,
-    RabbitMQModule, 
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

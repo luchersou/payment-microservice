@@ -19,5 +19,6 @@ import { PaymentService } from './modules/payment/payment.service';
   ],
   controllers: [PaymentsController],
   providers: [PaymentService, PaymentConsumer],
+  exports: [RabbitMQModule],
 })
 export class AppModule {}

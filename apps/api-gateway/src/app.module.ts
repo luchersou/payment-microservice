@@ -18,5 +18,6 @@ import { PaymentsModule } from './modules/payments/payments.module';
     OrdersModule,
     PaymentsModule,
   ],
+  exports: [RabbitMQModule],
 })
 export class AppModule {}
