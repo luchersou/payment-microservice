@@ -8,7 +8,7 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
 import { OrderCancelRequestedEvent } from '@contracts/events/order-cancel-requested.event';
 
-import { makeHttpRequest } from '../../common/http-client.helper';
+import { makeHttpRequest } from '../../common/http/http-client.helper';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()

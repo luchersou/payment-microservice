@@ -2,7 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { makeHttpRequest } from '../../common/http-client.helper';
+import { makeHttpRequest } from '../../common/http/http-client.helper';
 
 @Injectable()
 export class PaymentsService {

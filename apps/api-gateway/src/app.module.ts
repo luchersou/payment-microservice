@@ -1,4 +1,4 @@
-import { HttpModule } from '@nestjs/axios';
+import { CustomHttpModule } from './common/http/http.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
@@ -10,10 +10,10 @@ import { PaymentsModule } from './modules/payments/payments.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    HttpModule,
+    CustomHttpModule,
     RabbitMQModule,
     OrdersModule,
     PaymentsModule,
-  ],
+  ]
 })
 export class AppModule {}
