@@ -24,7 +24,11 @@ export const orderRabbitmqConfig: RabbitMQConfig = {
 
   queues: [
     {
-      name: DLQ.ORDER_PROCESS,
+      name: DLQ.ORDER_CREATE,
+      options: { durable: true },
+    },
+    {
+      name: DLQ.ORDER_CANCEL_REQUESTED,
       options: { durable: true },
     },
     {

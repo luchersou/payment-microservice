@@ -56,16 +56,18 @@ payment-microservices/
 │   │   └── src/
 │   │       ├── common/
 │   │       │   └── http-client.helper.ts
-│   │       └── modules/
-│   │           ├── orders/
-│   │           │   ├── dto/
-│   │           │   ├── orders.controller.ts
-│   │           │   ├── orders.service.ts
-│   │           │   └── orders.module.ts
-│   │           └── payments/
-│   │               ├── payments.controller.ts
-│   │               ├── payments.service.ts
-│   │               └── payments.module.ts
+│   │       ├── modules/
+│   │       │   ├── orders/
+│   │       │   │   ├── dto/
+│   │       │   │   ├── orders.controller.ts
+│   │       │   │   ├── orders.service.ts
+│   │       │   │   └── orders.module.ts
+│   │       │   └── payments/
+│   │       │       ├── payments.controller.ts
+│   │       │       ├── payments.service.ts
+│   │       │       └── payments.module.ts
+│   │       ├── app.module.ts
+│   │       └── main.ts
 │   │
 │   ├── order-service/               # Order Microservice (Port 3001)
 │   │   ├── prisma/
@@ -75,12 +77,15 @@ payment-microservices/
 │   │   │   ├── prisma.service.ts
 │   │   │   └── schema.prisma
 │   │   └── src/
-│   │       └── modules/
-│   │           └── order/
-│   │               ├── dto/
-│   │               ├── order.consumer.ts
-│   │               ├── order.controller.ts
-│   │               └── order.service.ts
+│   │       ├── modules/
+│   │       │   └── order/
+│   │       │       ├── dto/
+│   │       │       ├── order.consumer.ts
+│   │       │       ├── order.controller.ts
+│   │       │       └── order.service.ts
+│   │       ├── app.module.ts
+│   │       ├── main.ts
+│   │       └── rabbitmq.config.ts
 │   │
 │   └── payment-service/             # Payment Microservice (Port 3002)
 │       ├── prisma/
@@ -90,12 +95,15 @@ payment-microservices/
 │       │   ├── prisma.service.ts
 │       │   └── schema.prisma
 │       └── src/
-│           └── modules/
-│               └── payment/
-│                   ├── dto/
-│                   ├── payment.consumer.ts
-│                   ├── payment.controller.ts
-│                   └── payment.service.ts
+│           ├── modules/
+│           │   └── payment/
+│           │       ├── dto/
+│           │       ├── payment.consumer.ts
+│           │       ├── payment.controller.ts
+│           │       └── payment.service.ts
+│           ├── app.module.ts
+│           ├── main.ts
+│           └── rabbitmq.config.ts
 │
 ├── libs/
 │   ├── contracts/                   # Shared contracts
@@ -116,8 +124,7 @@ payment-microservices/
 │       └── rabbitmq/
 │           ├── config/
 │           ├── constants/
-│           ├── rabbitmq.module.ts
-│           └── rabbitmq.service.ts
+│           └── rabbitmq.module.ts
 │
 ├── docker-compose.yml
 └── README.md

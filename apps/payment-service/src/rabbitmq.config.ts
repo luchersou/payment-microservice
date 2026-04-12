@@ -18,23 +18,4 @@ export const paymentRabbitmqConfig: RabbitMQConfig = {
       type: 'topic',
     },
   ],
-
-  queues: [
-    {
-      name: Queues.PAYMENT_PROCESS,
-      options: {
-        durable: true,
-        arguments: {
-          'x-dead-letter-exchange': Exchanges.DLX,
-          'x-dead-letter-routing-key': DLQ.PAYMENT_PROCESS,
-        },
-      },
-    },
-    {
-      name: DLQ.PAYMENT_PROCESS,
-      options: {
-        durable: true,
-      },
-    },
-  ],
 };

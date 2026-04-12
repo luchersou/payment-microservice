@@ -4,8 +4,10 @@ import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { Queues } from '@messaging/rabbitmq/constants/queues.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { DLQ } from '@messaging/rabbitmq/constants/dlq.constant';
-import { PAYMENT_PROCESS_QUEUE_OPTIONS } from '@messaging/rabbitmq/config/queue-options.config';
+import { 
+  PAYMENT_ORDER_CREATED_QUEUE_OPTIONS, 
+  PAYMENT_ORDER_CANCELLED_QUEUE_OPTIONS 
+} from '@messaging/rabbitmq/config/queue-options.config';
 
 import { OrderCreatedEvent } from '@contracts/events/order-created.event';
 import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
@@ -24,8 +26,8 @@ export class PaymentConsumer {
   @RabbitSubscribe({
     exchange: Exchanges.ORDERS,
     routingKey: RoutingKeys.ORDER_CREATED,
-    queue: Queues.PAYMENT_PROCESS,
-    queueOptions: PAYMENT_PROCESS_QUEUE_OPTIONS,
+    queue: Queues.PAYMENT_ORDER_CREATED,
+    queueOptions: PAYMENT_ORDER_CREATED_QUEUE_OPTIONS,
   })
   async handleOrderCreated(event: OrderCreatedEvent) {
     this.logger.log(`📥 Received OrderCreated: ${event.payload.orderId}`);
@@ -48,8 +50,8 @@ export class PaymentConsumer {
   @RabbitSubscribe({
     exchange: Exchanges.ORDERS,
     routingKey: RoutingKeys.ORDER_CANCELLED,
-    queue: Queues.PAYMENT_PROCESS,
-    queueOptions: PAYMENT_PROCESS_QUEUE_OPTIONS,
+    queue: Queues.PAYMENT_ORDER_CANCELLED,
+    queueOptions: PAYMENT_ORDER_CANCELLED_QUEUE_OPTIONS,
   })
   async handleOrderCancelled(event: OrderCancelledEvent) {
     this.logger.log(`📥 Received OrderCancelled: ${event.payload.orderId}`);

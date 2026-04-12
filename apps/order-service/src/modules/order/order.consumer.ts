@@ -5,8 +5,10 @@ import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { Queues } from '@messaging/rabbitmq/constants/queues.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
 
-import { ORDER_PROCESS_QUEUE_OPTIONS,
-  ORDER_PAYMENT_RESULT_QUEUE_OPTIONS
+import { 
+  ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
+  ORDER_CREATE_QUEUE_OPTIONS,
+  ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS
 } from '@messaging/rabbitmq/config/queue-options.config';
 
 import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
@@ -16,6 +18,12 @@ import { PaymentDeclinedEvent } from '@contracts/events/payment-declined.event';
 import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
 
 import { OrderService } from './order.service';
+import { EventTypes } from '@contracts/types/event-types.enum';
+
+type PaymentEvents =
+  | PaymentApprovedEvent
+  | PaymentDeclinedEvent
+  | PaymentFailedEvent;
 
 @Injectable()
 export class OrderConsumer {
@@ -30,8 +38,8 @@ export class OrderConsumer {
   @RabbitSubscribe({
     exchange: Exchanges.ORDERS,
     routingKey: RoutingKeys.CREATE_ORDER_REQUESTED,
-    queue: Queues.ORDER_PROCESS,
-    queueOptions: ORDER_PROCESS_QUEUE_OPTIONS,
+    queue: Queues.ORDER_CREATE,
+    queueOptions: ORDER_CREATE_QUEUE_OPTIONS,
   })
   async handleCreateOrderRequested(event: CreateOrderRequestedEvent) {
     this.logger.log(`📥 Received CreateOrderRequested: ${event.payload.userId}`);
@@ -41,8 +49,8 @@ export class OrderConsumer {
   @RabbitSubscribe({
     exchange: Exchanges.ORDERS,
     routingKey: RoutingKeys.ORDER_CANCEL_REQUESTED,
-    queue: Queues.ORDER_PROCESS,
-    queueOptions: ORDER_PROCESS_QUEUE_OPTIONS,
+    queue: Queues.ORDER_CANCEL_REQUESTED,
+    queueOptions: ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS,
   })
   async handleOrderCancelRequested(event: OrderCancelRequestedEvent) {
     this.logger.log(`📥 Received OrderCancelRequested: ${event.payload.orderId}`);
@@ -55,34 +63,35 @@ export class OrderConsumer {
 
   @RabbitSubscribe({
     exchange: Exchanges.PAYMENTS,
-    routingKey: RoutingKeys.PAYMENT_ALL,
+    routingKey: [
+      RoutingKeys.PAYMENT_APPROVED,
+      RoutingKeys.PAYMENT_DECLINED,
+      RoutingKeys.PAYMENT_FAILED,
+    ],
     queue: Queues.ORDER_PAYMENT_RESULT,
     queueOptions: ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
   })
-  async handlePaymentApproved(event: PaymentApprovedEvent) {
-    this.logger.log(`📥 Received PaymentApproved for order ${event.payload.orderId}`);
-    await this.orderService.completeOrder(event.payload.orderId);
-  }
+  async handlePaymentEvents(event: PaymentEvents) {
+    const { orderId } = event.payload;
 
-  @RabbitSubscribe({
-    exchange: Exchanges.PAYMENTS,
-    routingKey: RoutingKeys.PAYMENT_ALL,
-    queue: Queues.ORDER_PAYMENT_RESULT,
-    queueOptions: ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
-  })
-  async handlePaymentDeclined(event: PaymentDeclinedEvent) {
-    this.logger.log(`📥 Received PaymentDeclined for order ${event.payload.orderId}`);
-    await this.orderService.cancelByPaymentDeclined(event.payload.orderId);
-  }
+    this.logger.log(`📥 ${event.eventType} received for order ${orderId}`);
 
-  @RabbitSubscribe({
-    exchange: Exchanges.PAYMENTS,
-    routingKey: RoutingKeys.PAYMENT_ALL,
-    queue: Queues.ORDER_PAYMENT_RESULT,
-    queueOptions: ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
-  })
-  async handlePaymentFailed(event: PaymentFailedEvent) {
-    this.logger.log(`📥 Received PaymentFailed for order ${event.payload.orderId}`);
-    await this.orderService.failOrder(event.payload.orderId);
+    switch (event.eventType) {
+      case EventTypes.PAYMENT_APPROVED:
+        await this.orderService.completeOrder(orderId);
+        break;
+
+      case EventTypes.PAYMENT_DECLINED:
+        await this.orderService.cancelByPaymentDeclined(orderId);
+        break;
+
+      case EventTypes.PAYMENT_FAILED:
+        await this.orderService.failOrder(orderId);
+        break;
+
+      default:
+        this.logger.error(`❌ Unknown payment event: ${event}`);
+        break;
+    }
   }
 }

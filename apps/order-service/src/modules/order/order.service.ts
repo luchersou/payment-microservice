@@ -21,7 +21,7 @@ export class OrderService {
   private readonly logger = new Logger(OrderService.name);
 
   constructor(
-    private readonly AmqpConnection: AmqpConnection,
+    private readonly amqpConnection: AmqpConnection,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -97,7 +97,7 @@ export class OrderService {
       total: order.total,
     });
 
-    await this.AmqpConnection.publish(
+    await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
       event,
@@ -210,7 +210,7 @@ export class OrderService {
       cancelledAt: new Date(),
     });
 
-    await this.AmqpConnection.publish(
+    await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCELLED,
       event,
