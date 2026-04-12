@@ -1,4 +1,4 @@
-import { EventTypes } from '@contracts/types/event-types.enum';
+import { EventTypes } from '@contracts/types';
 
 import { BaseEvent } from './base.event';
 

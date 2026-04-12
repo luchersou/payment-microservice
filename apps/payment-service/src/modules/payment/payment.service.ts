@@ -1,18 +1,20 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CorrelationIdService } from '@common/context/correlation-id.service';
+import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger/correlation-logger.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Payment } from '@payment/prisma/generated/prisma/client';
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 import { PrismaService } from '@payment/prisma/prisma.service';
 
-import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
-import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { OrderCancelledPayload } from '@contracts/events/order-cancelled.event';
-import { OrderCreatedPayload } from '@contracts/events/order-created.event';
-import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
-import { PaymentDeclinedEvent } from '@contracts/events/payment-declined.event';
-import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
+import { Exchanges,
+  RoutingKeys,
+} from '@messaging/rabbitmq';
+import { OrderCancelledPayload,
+  OrderCreatedPayload,
+  PaymentApprovedEvent,
+  PaymentDeclinedEvent,
+  PaymentFailedEvent,
+} from '@contracts/events';
 
 import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 import { CorrelationIdService } from '@common/context/correlation-id.service';
 import { CorrelationLogger } from '@common/logger/correlation-logger.service';
@@ -8,12 +8,16 @@ import { Order } from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
-import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
-import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
-import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
-import { OrderCreatedEvent } from '@contracts/events/order-created.event';
-import { CancelReason } from '@contracts/types/cancel-reason.enum';
+import { 
+  Exchanges, 
+  RoutingKeys 
+} from '@messaging/rabbitmq';
+import { 
+  CreateOrderRequestedPayload,
+  OrderCancelledEvent,
+  OrderCreatedEvent
+} from '@contracts/events';
+import { CancelReason } from '@contracts/types';
 
 import { OrderResponseDto } from './dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';

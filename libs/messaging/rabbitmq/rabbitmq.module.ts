@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { RabbitMQModule as GolevelupRabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 
-import { rabbitmqBaseConfig } from './config/rabbitmq.base.config';
+import { rabbitmqBaseConfig } from '@messaging/rabbitmq';
 
 @Global()
 @Module({

@@ -1,4 +1,4 @@
-import { correlationIdStorage } from '@common/context/correlation-id.context';
+import { correlationIdStorage } from '@common/context';
 import { ConsumeMessage } from 'amqplib';
 
 export function runWithCorrelation(

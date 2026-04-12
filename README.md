@@ -55,7 +55,12 @@ payment-microservices/
 │   ├── api-gateway/                 # API Gateway (Port 3000)
 │   │   └── src/
 │   │       ├── common/
-│   │       │   └── http-client.helper.ts
+│   │       │   ├── http/
+│   │       │   │   ├── http-client.helper.ts
+│   │       │   │   ├── http-client.provider.ts
+│   │       │   │   └── http.module.ts
+│   │       │   └── middleware/
+│   │       │       └── correlation-id.middleware.ts
 │   │       ├── modules/
 │   │       │   ├── orders/
 │   │       │   │   ├── dto/
@@ -117,14 +122,21 @@ payment-microservices/
 │   │   │   ├── payment-declined.event.ts
 │   │   │   └── payment-failed.event.ts
 │   │   └── types/
-│   │       └── event-types.enum.ts
+│   │       ├── event-types.enum.ts
 │   │       └── cancel-reason.enum.ts
 │   │
-│   └── messaging/                   # Shared RabbitMQ module
-│       └── rabbitmq/
-│           ├── config/
-│           ├── constants/
-│           └── rabbitmq.module.ts
+│   ├── messaging/                   # Shared RabbitMQ module
+│   │   └── rabbitmq/
+│   │       ├── config/
+│   │       ├── constants/
+│   │       └── rabbitmq.module.ts
+│   │
+│   └── common/                      # Shared utilities
+│       ├── context/
+│       │   ├── correlation-id.context.ts
+│       │   └── correlation-id.service.ts
+│       └── messaging/
+│           └── run-with-correlation.ts
 │
 ├── docker-compose.yml
 └── README.md

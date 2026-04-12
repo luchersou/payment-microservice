@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { CorrelationIdService } from '@common/context/correlation-id.service';
+import { CorrelationIdService } from '@common/context';
 
 export class CorrelationLogger extends Logger {
   private getPrefix(): string {

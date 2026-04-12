@@ -1,5 +1,5 @@
-import { CancelReason } from '@contracts/types/cancel-reason.enum';
-import { EventTypes } from '@contracts/types/event-types.enum';
+import { CancelReason } from '@contracts/types';
+import { EventTypes } from '@contracts/types';
 
 import { BaseEvent } from './base.event';
 

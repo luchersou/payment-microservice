@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CorrelationLogger } from '@common/logger/correlation-logger.service';
-import { runWithCorrelation } from '@common/messaging/run-with-correlation';
+import { runWithCorrelation } from '@common/messaging';
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { ConsumeMessage } from 'amqplib';
 
@@ -8,16 +8,18 @@ import {
   ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS,
   ORDER_CREATE_QUEUE_OPTIONS,
   ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
-} from '@messaging/rabbitmq/config/queue-options.config';
-import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
-import { Queues } from '@messaging/rabbitmq/constants/queues.constant';
-import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
-import { OrderCancelRequestedEvent } from '@contracts/events/order-cancel-requested.event';
-import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
-import { PaymentDeclinedEvent } from '@contracts/events/payment-declined.event';
-import { PaymentFailedEvent } from '@contracts/events/payment-failed.event';
-import { EventTypes } from '@contracts/types/event-types.enum';
+} from '@messaging/rabbitmq';
+import { Exchanges } from '@messaging/rabbitmq';
+import { Queues } from '@messaging/rabbitmq/constants';
+import { RoutingKeys } from '@messaging/rabbitmq';
+import { 
+  CreateOrderRequestedEvent,
+  OrderCancelRequestedEvent,
+  PaymentApprovedEvent,
+  PaymentDeclinedEvent,
+  PaymentFailedEvent,
+ } from '@contracts/events';
+import { EventTypes } from '@contracts/types';
 
 import { OrderService } from './order.service';
 

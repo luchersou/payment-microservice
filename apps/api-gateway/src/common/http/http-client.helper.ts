@@ -3,7 +3,7 @@ import {
   NotFoundException,
   RequestTimeoutException,
 } from '@nestjs/common';
-import { CorrelationIdService } from '@common/context/correlation-id.service';
+import { CorrelationIdService } from '@common/context';
 import { AxiosResponse } from 'axios';
 import { catchError, firstValueFrom, Observable, tap, timeout } from 'rxjs';
 

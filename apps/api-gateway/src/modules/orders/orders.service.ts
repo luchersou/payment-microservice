@@ -1,15 +1,16 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CorrelationIdService } from '@common/context/correlation-id.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 
-import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
-import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
-import { OrderCancelRequestedEvent } from '@contracts/events/order-cancel-requested.event';
+import { CorrelationIdService } from '@common/context';
+import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import {
+  CreateOrderRequestedEvent,
+  OrderCancelRequestedEvent,
+} from '@contracts/events';
 
-import { makeHttpRequest } from '../../common/http/http-client.helper';
+import { makeHttpRequest } from '../../common/http';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
