@@ -1,10 +1,11 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CorrelationIdService } from '@common/context/correlation-id.service';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CreateOrderRequestedEvent } from '@contracts/events/create-order-requested.event';
 import { OrderCancelRequestedEvent } from '@contracts/events/order-cancel-requested.event';
 
@@ -37,10 +38,15 @@ export class OrdersService {
       total: createOrderDto.total,
     });
 
+    const correlationId = CorrelationIdService.getId();
+
     await this.AmqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.CREATE_ORDER_REQUESTED,
       event,
+      {
+        correlationId,
+      },
     );
 
     return {
@@ -54,10 +60,15 @@ export class OrdersService {
       orderId,
     });
 
+    const correlationId = CorrelationIdService.getId();
+
     await this.AmqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCEL_REQUESTED,
       event,
+      {
+        correlationId,
+      },
     );
 
     return {

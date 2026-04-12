@@ -3,9 +3,9 @@ import {
   NotFoundException,
   RequestTimeoutException,
 } from '@nestjs/common';
+import { CorrelationIdService } from '@common/context/correlation-id.service';
 import { AxiosResponse } from 'axios';
 import { catchError, firstValueFrom, Observable, tap, timeout } from 'rxjs';
-import { CorrelationIdService } from '../context/correlation-id.service';
 
 export async function makeHttpRequest<T>(
   observable: Observable<AxiosResponse<T>>,
@@ -34,9 +34,7 @@ export async function makeHttpRequest<T>(
           }
 
           if (error.name === 'TimeoutError') {
-            Logger.error(
-              `[${correlationId}] Timeout: ${url} (${timeoutMs}ms)`,
-            );
+            Logger.error(`[${correlationId}] Timeout: ${url} (${timeoutMs}ms)`);
             throw new RequestTimeoutException('Service is unavailable');
           }
 

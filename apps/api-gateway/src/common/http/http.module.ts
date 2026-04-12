@@ -1,5 +1,6 @@
-import { Global, Module, OnModuleInit } from '@nestjs/common';
 import { HttpModule, HttpService } from '@nestjs/axios';
+import { Global, Module, OnModuleInit } from '@nestjs/common';
+
 import { setupAxiosInterceptors } from './http-client.provider';
 
 @Global()

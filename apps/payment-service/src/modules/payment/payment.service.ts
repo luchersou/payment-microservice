@@ -1,11 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { CorrelationIdService } from '@common/context/correlation-id.service';
+import { CorrelationLogger } from '@common/logger/correlation-logger.service';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Payment } from '@payment/prisma/generated/prisma/client';
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 import { PrismaService } from '@payment/prisma/prisma.service';
 
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { OrderCancelledPayload } from '@contracts/events/order-cancelled.event';
 import { OrderCreatedPayload } from '@contracts/events/order-created.event';
 import { PaymentApprovedEvent } from '@contracts/events/payment-approved.event';
@@ -18,7 +20,7 @@ import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
 
 @Injectable()
 export class PaymentService {
-  private readonly logger = new Logger(PaymentService.name);
+  private readonly logger = new CorrelationLogger(PaymentService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -155,7 +157,6 @@ export class PaymentService {
     } catch (error) {
       this.logger.error(
         `❌ Unexpected error while processing payment for order ${payload.orderId}`,
-        error,
       );
 
       await this.failPayment(payload.orderId, error);
@@ -235,15 +236,23 @@ export class PaymentService {
       },
     });
 
-    const event = new PaymentApprovedEvent({
-      orderId,
-      transactionId: paymentId,
-    });
+    const correlationId = CorrelationIdService.getId();
+
+    const event = new PaymentApprovedEvent(
+      {
+        orderId,
+        transactionId: paymentId,
+      },
+      correlationId,
+    );
 
     await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_APPROVED,
       event,
+      {
+        correlationId,
+      },
     );
 
     this.logger.log(`✅ Payment approved for order ${orderId}`);
@@ -276,15 +285,23 @@ export class PaymentService {
       },
     });
 
-    const event = new PaymentDeclinedEvent({
-      orderId,
-      reason: reason ?? 'Insufficient funds',
-    });
+    const correlationId = CorrelationIdService.getId();
+
+    const event = new PaymentDeclinedEvent(
+      {
+        orderId,
+        reason: reason ?? 'Insufficient funds',
+      },
+      correlationId,
+    );
 
     await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_DECLINED,
       event,
+      {
+        correlationId,
+      },
     );
 
     this.logger.warn(`⚠️ Payment declined for order ${orderId}`);
@@ -306,15 +323,23 @@ export class PaymentService {
       });
     }
 
-    const event = new PaymentFailedEvent({
-      orderId,
-      error: error?.message ?? 'Unknown error',
-    });
+    const correlationId = CorrelationIdService.getId();
+
+    const event = new PaymentFailedEvent(
+      {
+        orderId,
+        error: error?.message ?? 'Unknown error',
+      },
+      correlationId,
+    );
 
     await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_FAILED,
       event,
+      {
+        correlationId,
+      },
     );
   }
 

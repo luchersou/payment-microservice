@@ -1,5 +1,5 @@
-import { Exchanges } from '../constants/exchanges.constant';
 import { DLQ } from '../constants/dlq.constant';
+import { Exchanges } from '../constants/exchanges.constant';
 
 export const ORDER_CREATE_QUEUE_OPTIONS = {
   durable: true,

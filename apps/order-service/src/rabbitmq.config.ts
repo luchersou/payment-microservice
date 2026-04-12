@@ -1,8 +1,8 @@
 import { RabbitMQConfig } from '@golevelup/nestjs-rabbitmq';
 
 import { rabbitmqBaseConfig } from '@messaging/rabbitmq/config/rabbitmq.base.config';
-import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { DLQ } from '@messaging/rabbitmq/constants/dlq.constant';
+import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 
 export const orderRabbitmqConfig: RabbitMQConfig = {
   ...(rabbitmqBaseConfig as RabbitMQConfig),

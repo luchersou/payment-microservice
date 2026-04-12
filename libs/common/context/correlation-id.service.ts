@@ -1,4 +1,4 @@
-import { correlationIdStorage } from "./correlation-id.context";
+import { correlationIdStorage } from './correlation-id.context';
 
 export class CorrelationIdService {
   static getId(): string | undefined {

@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
+import { CorrelationIdService } from '@common/context/correlation-id.service';
+import { CorrelationLogger } from '@common/logger/correlation-logger.service';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { OrderStatus } from '@order/prisma/generated/prisma/client';
 import { Order } from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
@@ -7,7 +10,6 @@ import { randomUUID } from 'crypto';
 
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
 import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 import { OrderCreatedEvent } from '@contracts/events/order-created.event';
@@ -18,7 +20,7 @@ import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto'
 
 @Injectable()
 export class OrderService {
-  private readonly logger = new Logger(OrderService.name);
+  private readonly logger = new CorrelationLogger(OrderService.name);
 
   constructor(
     private readonly amqpConnection: AmqpConnection,
@@ -91,16 +93,24 @@ export class OrderService {
 
     this.logger.log(`✅ Order ${order.id} persisted`);
 
-    const event = new OrderCreatedEvent({
-      orderId: order.id,
-      userId: order.userId,
-      total: order.total,
-    });
+    const correlationId = CorrelationIdService.getId();
+
+    const event = new OrderCreatedEvent(
+      {
+        orderId: order.id,
+        userId: order.userId,
+        total: order.total,
+      },
+      correlationId,
+    );
 
     await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
       event,
+      {
+        correlationId,
+      },
     );
 
     return order;
@@ -204,16 +214,24 @@ export class OrderService {
       },
     });
 
-    const event = new OrderCancelledEvent({
-      orderId: updatedOrder.id,
-      reason,
-      cancelledAt: new Date(),
-    });
+    const correlationId = CorrelationIdService.getId();
+
+    const event = new OrderCancelledEvent(
+      {
+        orderId: updatedOrder.id,
+        reason,
+        cancelledAt: new Date(),
+      },
+      correlationId,
+    );
 
     await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCELLED,
       event,
+      {
+        correlationId,
+      },
     );
 
     this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);

@@ -9,6 +9,7 @@
     "paths": {
       "@messaging/*": ["libs/messaging/*"],
       "@contracts/*": ["libs/contracts/*"],
+      "@common/*": ["libs/common/*"],
       "@order/*": ["apps/order-service/*"],
       "@payment/*": ["apps/payment-service/*"]
     },
