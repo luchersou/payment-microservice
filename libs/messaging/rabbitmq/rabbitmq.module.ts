@@ -1,10 +1,15 @@
 import { Global, Module } from '@nestjs/common';
+import { RabbitMQModule as GolevelupRabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 
-import { RabbitMQService } from './rabbitmq.service';
+import { rabbitmqBaseConfig } from './config/rabbitmq.base.config';
 
 @Global()
 @Module({
-  providers: [RabbitMQService],
-  exports: [RabbitMQService],
+  imports: [
+    GolevelupRabbitMQModule.forRootAsync({
+      useFactory: () => rabbitmqBaseConfig as any,
+    }),
+  ],
+  exports: [GolevelupRabbitMQModule],
 })
 export class RabbitMQModule {}

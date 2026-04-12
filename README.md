@@ -56,16 +56,18 @@ payment-microservices/
 │   │   └── src/
 │   │       ├── common/
 │   │       │   └── http-client.helper.ts
-│   │       └── modules/
-│   │           ├── orders/
-│   │           │   ├── dto/
-│   │           │   ├── orders.controller.ts
-│   │           │   ├── orders.service.ts
-│   │           │   └── orders.module.ts
-│   │           └── payments/
-│   │               ├── payments.controller.ts
-│   │               ├── payments.service.ts
-│   │               └── payments.module.ts
+│   │       ├── modules/
+│   │       │   ├── orders/
+│   │       │   │   ├── dto/
+│   │       │   │   ├── orders.controller.ts
+│   │       │   │   ├── orders.service.ts
+│   │       │   │   └── orders.module.ts
+│   │       │   └── payments/
+│   │       │       ├── payments.controller.ts
+│   │       │       ├── payments.service.ts
+│   │       │       └── payments.module.ts
+│   │       ├── app.module.ts
+│   │       └── main.ts
 │   │
 │   ├── order-service/               # Order Microservice (Port 3001)
 │   │   ├── prisma/
@@ -75,12 +77,15 @@ payment-microservices/
 │   │   │   ├── prisma.service.ts
 │   │   │   └── schema.prisma
 │   │   └── src/
-│   │       └── modules/
-│   │           └── order/
-│   │               ├── dto/
-│   │               ├── order.consumer.ts
-│   │               ├── order.controller.ts
-│   │               └── order.service.ts
+│   │       ├── modules/
+│   │       │   └── order/
+│   │       │       ├── dto/
+│   │       │       ├── order.consumer.ts
+│   │       │       ├── order.controller.ts
+│   │       │       └── order.service.ts
+│   │       ├── app.module.ts
+│   │       ├── main.ts
+│   │       └── rabbitmq.config.ts
 │   │
 │   └── payment-service/             # Payment Microservice (Port 3002)
 │       ├── prisma/
@@ -90,12 +95,15 @@ payment-microservices/
 │       │   ├── prisma.service.ts
 │       │   └── schema.prisma
 │       └── src/
-│           └── modules/
-│               └── payment/
-│                   ├── dto/
-│                   ├── payment.consumer.ts
-│                   ├── payment.controller.ts
-│                   └── payment.service.ts
+│           ├── modules/
+│           │   └── payment/
+│           │       ├── dto/
+│           │       ├── payment.consumer.ts
+│           │       ├── payment.controller.ts
+│           │       └── payment.service.ts
+│           ├── app.module.ts
+│           ├── main.ts
+│           └── rabbitmq.config.ts
 │
 ├── libs/
 │   ├── contracts/                   # Shared contracts
@@ -116,8 +124,7 @@ payment-microservices/
 │       └── rabbitmq/
 │           ├── config/
 │           ├── constants/
-│           ├── rabbitmq.module.ts
-│           └── rabbitmq.service.ts
+│           └── rabbitmq.module.ts
 │
 ├── docker-compose.yml
 └── README.md
@@ -130,9 +137,9 @@ payment-microservices/
 ### ✅ API Gateway
 - Single entry point for all client requests
 - Routes queries (GET) directly to microservices via HTTP
-- Emits events for commands (POST/PATCH) via RabbitMQ
+- Emits domain events (commands) via RabbitMQ exchanges without knowledge of downstream queues
 - Centralized error handling and logging
-- Request timeout and retry logic
+- Request timeout handling
 
 ### ✅ Order Service
 * Manages order lifecycle (PENDING_PAYMENT → PAID → CANCELLED → FAILED)
@@ -152,16 +159,25 @@ payment-microservices/
 * Isolated PostgreSQL database
 
 ### ✅ Event-Driven Architecture
-- RabbitMQ for asynchronous messaging
-- Dead Letter Queue (DLQ) for failed messages
-- Event replay and idempotency handling
+- RabbitMQ (topic exchanges) for asynchronous pub/sub messaging
+- Dead Letter Queues (DLQ) per service for failed message isolation and retry strategies
+- Each service owns its queues and subscribes to events via routing keys
+- Loose coupling through event-driven communication (no shared queues between services)
 - Durable queues and persistent messages
 
 ### ✅ Saga Pattern (Choreography)
 - **Happy path**: `order.create.requested` → `order.created` → `payment.approved` → order marked as PAID
 - **Failure path**: `payment.declined` / `payment.failed` → order marked as CANCELLED / FAILED
 - **Compensating transaction**: `order.cancel.requested` → `order.cancelled` → payment marked as CANCELLED or REFUNDED
-- **No central coordinator** — each service reacts to events and emits its own
+- **No central coordinator** — each service reacts to domain events via its own queues and emits new events
+
+### Messaging Design
+
+- Topic-based exchanges (orders.exchange, payments.exchange)
+- Routing keys define event types (e.g., order.created, payment.approved)
+- Each service owns its queues (e.g., order.payment-result.queue)
+- No shared queues across services
+- Consumers subscribe using routing key patterns (e.g., payment.*)
 
 ---
 
@@ -245,7 +261,7 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 
 4. Payment Service → Consume order.created
    - Create payment (status: PROCESSING)
-   - Simulate payment gateway
+   - Simulate payment gateway (async processing)
 
 5. Payment Service → Emit:
    - payment.approved
@@ -254,9 +270,9 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 
 6. Order Service → Consume payment event
    - Update order status:
-     - APPROVED → PAID
-     - DECLINED → CANCELLED
-     - FAILED → FAILED
+     - payment.approved → PAID
+     - payment.declined → CANCELLED
+     - payment.failed → FAILED
 ```
 
 ### Cancel Order Flow
@@ -270,7 +286,7 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 
 4. Payment Service → Consume order.cancelled
    - If PROCESSING → Mark as CANCELLED
-   - If APPROVED → Mark as REFUNDED
+   - If APPROVED → Initiate refund → Mark as REFUNDED
 ```
 ---
 

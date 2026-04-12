@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 
 import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
 import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { RabbitMQService } from '@messaging/rabbitmq/rabbitmq.service';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
 import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
 import { OrderCreatedEvent } from '@contracts/events/order-created.event';
@@ -21,7 +21,7 @@ export class OrderService {
   private readonly logger = new Logger(OrderService.name);
 
   constructor(
-    private readonly rabbit: RabbitMQService,
+    private readonly amqpConnection: AmqpConnection,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -97,7 +97,7 @@ export class OrderService {
       total: order.total,
     });
 
-    await this.rabbit.publish(
+    await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
       event,
@@ -210,7 +210,7 @@ export class OrderService {
       cancelledAt: new Date(),
     });
 
-    await this.rabbit.publish(
+    await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCELLED,
       event,
