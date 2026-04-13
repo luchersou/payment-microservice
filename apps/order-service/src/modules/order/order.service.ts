@@ -1,24 +1,28 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
-import { OrderStatus } from '@order/prisma/generated/prisma/client';
+
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { OrderStatus, Prisma } from '@order/prisma/generated/prisma/client';
 import { Order } from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
-import { Exchanges } from '@messaging/rabbitmq/constants/exchanges.constant';
-import { RoutingKeys } from '@messaging/rabbitmq/constants/routing-keys.constant';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { CreateOrderRequestedPayload } from '@contracts/events/create-order-requested.event';
-import { OrderCancelledEvent } from '@contracts/events/order-cancelled.event';
-import { OrderCreatedEvent } from '@contracts/events/order-created.event';
-import { CancelReason } from '@contracts/types/cancel-reason.enum';
+import { CorrelationIdService } from '@common/context';
+import { CorrelationLogger } from '@common/logger';
+import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import {
+  CreateOrderRequestedPayload,
+  OrderCancelledEvent,
+  OrderCreatedEvent,
+} from '@contracts/events';
+import { CancelReason } from '@contracts/types';
 
 import { OrderResponseDto } from './dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
 
 @Injectable()
 export class OrderService {
-  private readonly logger = new Logger(OrderService.name);
+  private readonly logger = new CorrelationLogger(OrderService.name);
 
   constructor(
     private readonly amqpConnection: AmqpConnection,
@@ -91,16 +95,24 @@ export class OrderService {
 
     this.logger.log(`✅ Order ${order.id} persisted`);
 
-    const event = new OrderCreatedEvent({
-      orderId: order.id,
-      userId: order.userId,
-      total: order.total,
-    });
+    const correlationId = CorrelationIdService.getId();
+
+    const event = new OrderCreatedEvent(
+      {
+        orderId: order.id,
+        userId: order.userId,
+        total: order.total,
+      },
+      correlationId,
+    );
 
     await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
       event,
+      {
+        correlationId,
+      },
     );
 
     return order;
@@ -184,41 +196,50 @@ export class OrderService {
       return;
     }
 
-    if (
-      order.status === OrderStatus.CANCELLED ||
-      order.status === OrderStatus.FAILED
-    ) {
-      this.logger.warn(`⚠️ Order ${orderId} already finalized.`);
-      return order;
-    }
-
     const newStatus =
       reason === CancelReason.PAYMENT_DECLINED
         ? OrderStatus.FAILED
         : OrderStatus.CANCELLED;
 
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: newStatus,
-      },
-    });
+    try {
+      const updatedOrder = await this.prisma.order.update({
+        where: {
+          id: orderId,
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED],
+          },
+        },
+        data: { status: newStatus },
+      });
 
-    const event = new OrderCancelledEvent({
-      orderId: updatedOrder.id,
-      reason,
-      cancelledAt: new Date(),
-    });
+      const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
-      event,
-    );
+      const event = new OrderCancelledEvent(
+        {
+          orderId: updatedOrder.id,
+          reason,
+          cancelledAt: new Date(),
+        },
+        correlationId,
+      );
 
-    this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);
+      await this.amqpConnection.publish(
+        Exchanges.ORDERS,
+        RoutingKeys.ORDER_CANCELLED,
+        event,
+        { correlationId },
+      );
 
-    return updatedOrder;
+      this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);
+
+      return updatedOrder;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        this.logger.warn(`⚠️ Order ${orderId} already finalized. Skipping.`);
+        return;
+      }
+      throw error;
+    }
   }
 
   private async waitForOrder(

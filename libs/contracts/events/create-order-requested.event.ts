@@ -1,5 +1,5 @@
-import { BaseEvent } from '@contracts/events/base.event';
-import { EventTypes } from '@contracts/types/event-types.enum';
+import { BaseEvent } from '@contracts/events';
+import { EventTypes } from '@contracts/types';
 
 export interface CreateOrderRequestedPayload {
   userId: string;

@@ -1,19 +1,24 @@
-import { HttpModule } from '@nestjs/axios';
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
-import { RabbitMQModule } from '@messaging/rabbitmq/rabbitmq.module';
+import { correlationIdMiddleware } from './common/middleware';
+import { RabbitMQModule } from '@messaging/rabbitmq';
 
-import { OrdersModule } from './modules/orders/orders.module';
-import { PaymentsModule } from './modules/payments/payments.module';
+import { CustomHttpModule } from './common/http';
+import { OrdersModule } from './modules/orders';
+import { PaymentsModule } from './modules/payments';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    HttpModule,
+    CustomHttpModule,
     RabbitMQModule,
     OrdersModule,
     PaymentsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(correlationIdMiddleware).forRoutes('*');
+  }
+}
