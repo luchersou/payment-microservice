@@ -1,9 +1,7 @@
-import { Injectable } from '@nestjs/common';
-import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { OrderStatus, Prisma } from '@order/prisma/generated/prisma/client';
-import { Order } from '@order/prisma/generated/prisma/client';
+import { Order, OrderStatus, Prisma } from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
@@ -29,10 +27,11 @@ export class OrderService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async findAll(
-    page: number,
-    limit: number,
-  ): Promise<PaginatedOrdersResponseDto> {
+  // ─────────────────────────────────────────────
+  // QUERIES
+  // ─────────────────────────────────────────────
+
+  async findAll(page: number, limit: number): Promise<PaginatedOrdersResponseDto> {
     const skip = (page - 1) * limit;
 
     const [orders, total] = await Promise.all([
@@ -45,14 +44,7 @@ export class OrderService {
     ]);
 
     return {
-      data: orders.map((order) => ({
-        id: order.id,
-        userId: order.userId,
-        total: order.total,
-        status: order.status,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt,
-      })),
+      data: orders.map((order) => this.toResponseDto(order)),
       meta: {
         page,
         limit,
@@ -63,30 +55,23 @@ export class OrderService {
   }
 
   async findOne(id: string): Promise<OrderResponseDto> {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
+    const order = await this.prisma.order.findUnique({ where: { id } });
 
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
-    return {
-      id: order.id,
-      userId: order.userId,
-      total: order.total,
-      status: order.status,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-    };
+    return this.toResponseDto(order);
   }
 
-  async createOrder(payload: CreateOrderRequestedPayload) {
-    const orderId = randomUUID();
+  // ─────────────────────────────────────────────
+  // COMMANDS
+  // ─────────────────────────────────────────────
 
+  async createOrder(payload: CreateOrderRequestedPayload) {
     const order = await this.prisma.order.create({
       data: {
-        id: orderId,
+        id: randomUUID(),
         userId: payload.userId,
         total: payload.total,
         status: OrderStatus.PENDING_PAYMENT,
@@ -97,22 +82,14 @@ export class OrderService {
 
     const correlationId = CorrelationIdService.getId();
 
-    const event = new OrderCreatedEvent(
-      {
-        orderId: order.id,
-        userId: order.userId,
-        total: order.total,
-      },
-      correlationId,
-    );
-
     await this.amqpConnection.publish(
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
-      event,
-      {
+      new OrderCreatedEvent(
+        { orderId: order.id, userId: order.userId, total: order.total },
         correlationId,
-      },
+      ),
+      { correlationId },
     );
 
     return order;
@@ -124,9 +101,7 @@ export class OrderService {
     const order = await this.waitForOrder(orderId);
 
     if (!order) {
-      this.logger.warn(
-        `⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`,
-      );
+      this.logger.warn(`⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`);
       return;
     }
 
@@ -136,17 +111,13 @@ export class OrderService {
     }
 
     if (order.status !== OrderStatus.PENDING_PAYMENT) {
-      this.logger.warn(
-        `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
-      );
+      this.logger.warn(`⚠️ Cannot complete order ${orderId} with status ${order.status}`);
       return;
     }
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: OrderStatus.PAID,
-      },
+      data: { status: OrderStatus.PAID },
     });
 
     this.logger.log(`✅ Order ${orderId} marked as PAID`);
@@ -163,14 +134,10 @@ export class OrderService {
   }
 
   async failOrder(orderId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-    });
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
 
     if (!order) {
-      this.logger.warn(
-        `⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`,
-      );
+      this.logger.warn(`⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`);
       return;
     }
 
@@ -180,11 +147,13 @@ export class OrderService {
 
     await this.prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: OrderStatus.FAILED,
-      },
+      data: { status: OrderStatus.FAILED },
     });
   }
+
+  // ─────────────────────────────────────────────
+  // PRIVATE — ORDER CANCELLATION
+  // ─────────────────────────────────────────────
 
   private async cancelOrderInternal(orderId: string, reason: CancelReason) {
     this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
@@ -205,28 +174,20 @@ export class OrderService {
       const updatedOrder = await this.prisma.order.update({
         where: {
           id: orderId,
-          status: {
-            notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED],
-          },
+          status: { notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED] },
         },
         data: { status: newStatus },
       });
 
       const correlationId = CorrelationIdService.getId();
 
-      const event = new OrderCancelledEvent(
-        {
-          orderId: updatedOrder.id,
-          reason,
-          cancelledAt: new Date(),
-        },
-        correlationId,
-      );
-
       await this.amqpConnection.publish(
         Exchanges.ORDERS,
         RoutingKeys.ORDER_CANCELLED,
-        event,
+        new OrderCancelledEvent(
+          { orderId: updatedOrder.id, reason, cancelledAt: new Date() },
+          correlationId,
+        ),
         { correlationId },
       );
 
@@ -242,21 +203,32 @@ export class OrderService {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // PRIVATE — HELPERS
+  // ─────────────────────────────────────────────
+
+  private toResponseDto(order: Order): OrderResponseDto {
+    return {
+      id: order.id,
+      userId: order.userId,
+      total: order.total,
+      status: order.status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+  }
+
   private async waitForOrder(
     orderId: string,
     maxRetries = 5,
     delayMs = 300,
   ): Promise<Order | null> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
-      });
+      const order = await this.prisma.order.findUnique({ where: { id: orderId } });
 
       if (order) {
         if (attempt > 1) {
-          this.logger.log(
-            `✅ Order ${orderId} found on retry ${attempt}/${maxRetries}`,
-          );
+          this.logger.log(`✅ Order ${orderId} found on retry ${attempt}/${maxRetries}`);
         }
         return order;
       }
