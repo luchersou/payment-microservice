@@ -207,7 +207,7 @@ export class PaymentService {
 
       case PaymentStatus.DECLINED:
       case PaymentStatus.FAILED:
-        this.logger.warn(`⚠️ Payment ${payment.id} already ${payment.status}`);
+        this.logger.log(`⚠️ Payment ${payment.id} already ${payment.status}`);
         return;
 
       default:

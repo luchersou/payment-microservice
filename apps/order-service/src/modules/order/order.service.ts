@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { OrderStatus } from '@order/prisma/generated/prisma/client';
+import { OrderStatus, Prisma } from '@order/prisma/generated/prisma/client';
 import { Order } from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
@@ -196,49 +196,50 @@ export class OrderService {
       return;
     }
 
-    if (
-      order.status === OrderStatus.CANCELLED ||
-      order.status === OrderStatus.FAILED
-    ) {
-      this.logger.warn(`⚠️ Order ${orderId} already finalized.`);
-      return order;
-    }
-
     const newStatus =
       reason === CancelReason.PAYMENT_DECLINED
         ? OrderStatus.FAILED
         : OrderStatus.CANCELLED;
 
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: newStatus,
-      },
-    });
+    try {
+      const updatedOrder = await this.prisma.order.update({
+        where: {
+          id: orderId,
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED],
+          },
+        },
+        data: { status: newStatus },
+      });
 
-    const correlationId = CorrelationIdService.getId();
+      const correlationId = CorrelationIdService.getId();
 
-    const event = new OrderCancelledEvent(
-      {
-        orderId: updatedOrder.id,
-        reason,
-        cancelledAt: new Date(),
-      },
-      correlationId,
-    );
-
-    await this.amqpConnection.publish(
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
-      event,
-      {
+      const event = new OrderCancelledEvent(
+        {
+          orderId: updatedOrder.id,
+          reason,
+          cancelledAt: new Date(),
+        },
         correlationId,
-      },
-    );
+      );
 
-    this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);
+      await this.amqpConnection.publish(
+        Exchanges.ORDERS,
+        RoutingKeys.ORDER_CANCELLED,
+        event,
+        { correlationId },
+      );
 
-    return updatedOrder;
+      this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);
+
+      return updatedOrder;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        this.logger.warn(`⚠️ Order ${orderId} already finalized. Skipping.`);
+        return;
+      }
+      throw error;
+    }
   }
 
   private async waitForOrder(
