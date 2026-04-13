@@ -1,5 +1,15 @@
 import { DLQ, Exchanges } from '@messaging/rabbitmq';
 
+/**
+ * Queue options for RabbitMQ queues.
+ *
+ * - `durable`: ensures the queue survives RabbitMQ restarts
+ * - `x-dead-letter-exchange`: routes failed messages to the DLX exchange
+ * - `x-dead-letter-routing-key`: identifies which DLQ receives the failed message
+ *
+ * Without these options, failed messages are silently discarded by RabbitMQ.
+ */
+
 export const ORDER_CREATE_QUEUE_OPTIONS = {
   durable: true,
   arguments: {
