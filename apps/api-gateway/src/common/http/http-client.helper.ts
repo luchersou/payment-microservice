@@ -3,9 +3,11 @@ import {
   NotFoundException,
   RequestTimeoutException,
 } from '@nestjs/common';
-import { CorrelationIdService } from '@common/context';
+
 import { AxiosResponse } from 'axios';
 import { catchError, firstValueFrom, Observable, tap, timeout } from 'rxjs';
+
+import { CorrelationIdService } from '@common/context';
 
 export async function makeHttpRequest<T>(
   observable: Observable<AxiosResponse<T>>,

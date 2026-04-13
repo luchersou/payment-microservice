@@ -1,15 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CorrelationIdService } from '@common/context';
-import { CorrelationLogger } from '@common/logger/correlation-logger.service';
+import { Injectable, NotFoundException } from '@nestjs/common';
+
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { Payment } from '@payment/prisma/generated/prisma/client';
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 import { PrismaService } from '@payment/prisma/prisma.service';
 
-import { Exchanges,
-  RoutingKeys,
-} from '@messaging/rabbitmq';
-import { OrderCancelledPayload,
+import { CorrelationIdService } from '@common/context';
+import { CorrelationLogger } from '@common/logger';
+import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import {
+  OrderCancelledPayload,
   OrderCreatedPayload,
   PaymentApprovedEvent,
   PaymentDeclinedEvent,

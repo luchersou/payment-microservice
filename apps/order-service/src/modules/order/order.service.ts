@@ -1,21 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
-import { CorrelationIdService } from '@common/context/correlation-id.service';
-import { CorrelationLogger } from '@common/logger/correlation-logger.service';
+
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { OrderStatus } from '@order/prisma/generated/prisma/client';
 import { Order } from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
-import { 
-  Exchanges, 
-  RoutingKeys 
-} from '@messaging/rabbitmq';
-import { 
+import { CorrelationIdService } from '@common/context';
+import { CorrelationLogger } from '@common/logger';
+import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import {
   CreateOrderRequestedPayload,
   OrderCancelledEvent,
-  OrderCreatedEvent
+  OrderCreatedEvent,
 } from '@contracts/events';
 import { CancelReason } from '@contracts/types';
 

@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 
 import { CorrelationIdService } from '@common/context';

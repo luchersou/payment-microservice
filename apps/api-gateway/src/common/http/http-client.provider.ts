@@ -1,5 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import { Logger } from '@nestjs/common';
+
 import { CorrelationIdService } from '@common/context';
 
 export function setupAxiosInterceptors(httpService: HttpService) {

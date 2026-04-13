@@ -1,7 +1,4 @@
-import { 
-  DLQ,
-  Exchanges
-} from '@messaging/rabbitmq/constants';
+import { DLQ, Exchanges } from '@messaging/rabbitmq';
 
 export const ORDER_CREATE_QUEUE_OPTIONS = {
   durable: true,

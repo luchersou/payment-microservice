@@ -1,21 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { CorrelationLogger } from '@common/logger/correlation-logger.service';
-import { runWithCorrelation } from '@common/messaging';
+
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { ConsumeMessage } from 'amqplib';
 
+import { CorrelationLogger } from '@common/logger';
+import { runWithCorrelation } from '@common/messaging';
 import {
+  Exchanges,
   PAYMENT_ORDER_CANCELLED_QUEUE_OPTIONS,
   PAYMENT_ORDER_CREATED_QUEUE_OPTIONS,
-} from '@messaging/rabbitmq';
-import { 
-  Exchanges,
   Queues,
   RoutingKeys,
 } from '@messaging/rabbitmq';
-import { OrderCancelledEvent,
-  OrderCreatedEvent,
-} from '@contracts/events';
+import { OrderCancelledEvent, OrderCreatedEvent } from '@contracts/events';
 
 import { PaymentService } from './payment.service';
 
