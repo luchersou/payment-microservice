@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { correlationIdMiddleware } from './common/middleware';
 import { RabbitMQModule } from '@messaging/rabbitmq';
 
 import { CustomHttpModule } from './common/http';
@@ -16,4 +17,8 @@ import { PaymentsModule } from './modules/payments';
     PaymentsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(correlationIdMiddleware).forRoutes('*');
+  }
+}

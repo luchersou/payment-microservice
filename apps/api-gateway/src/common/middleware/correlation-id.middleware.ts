@@ -1,3 +1,4 @@
+import { correlationIdStorage } from '@common/context/correlation-id.context';
 import { randomUUID } from 'crypto';
 import { NextFunction, Request, Response } from 'express';
 
@@ -17,5 +18,5 @@ export function correlationIdMiddleware(
 
   res.setHeader('x-correlation-id', correlationId);
 
-  next();
+  correlationIdStorage.run({ correlationId }, () => next());
 }
