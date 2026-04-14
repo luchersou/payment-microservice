@@ -16,6 +16,17 @@ model Payment {
   updatedAt DateTime      @updatedAt
 }
 
+model FailedMessage {
+  id          String   @id @default(uuid())
+  queue       String
+  routingKey  String
+  payload     Json
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@map("failed_messages")
+}
+
 enum PaymentStatus {
   PROCESSING
   APPROVED
