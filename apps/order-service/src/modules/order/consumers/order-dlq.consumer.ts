@@ -9,8 +9,20 @@ import {
   DLQ,
   Exchanges,
 } from '@messaging/rabbitmq';
+import {
+  CreateOrderRequestedEvent,
+  OrderCancelRequestedEvent,
+  PaymentApprovedEvent,
+  PaymentDeclinedEvent,
+  PaymentFailedEvent,
+} from '@contracts/events';
 
 import { OrderService } from '../services/order.service';
+
+type PaymentEvents =
+  | PaymentApprovedEvent
+  | PaymentDeclinedEvent
+  | PaymentFailedEvent;
 
 @Injectable()
 export class OrderDlqConsumer {
@@ -29,7 +41,7 @@ export class OrderDlqConsumer {
     queueOptions: { durable: true },
   })
   async handleCreateOrderDlq(
-    event: unknown,
+    event: CreateOrderRequestedEvent,
     amqpMsg: ConsumeMessage,
   ) {
     await runWithCorrelation(amqpMsg, async () => {
@@ -55,7 +67,7 @@ export class OrderDlqConsumer {
     queueOptions: { durable: true },
   })
   async handleCancelRequestedDlq(
-    event: unknown,
+    event: OrderCancelRequestedEvent,
     amqpMsg: ConsumeMessage,
   ) {
     await runWithCorrelation(amqpMsg, async () => {
@@ -81,7 +93,7 @@ export class OrderDlqConsumer {
     queueOptions: { durable: true },
   })
   async handlePaymentResultDlq(
-    event: unknown,
+    event: PaymentEvents,
     amqpMsg: ConsumeMessage,
   ) {
     await runWithCorrelation(amqpMsg, async () => {
