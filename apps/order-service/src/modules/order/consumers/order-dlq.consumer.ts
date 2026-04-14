@@ -5,10 +5,7 @@ import { ConsumeMessage } from 'amqplib';
 
 import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
-import {
-  DLQ,
-  Exchanges,
-} from '@messaging/rabbitmq';
+import { DLQ, Exchanges } from '@messaging/rabbitmq';
 import {
   CreateOrderRequestedEvent,
   OrderCancelRequestedEvent,
@@ -71,7 +68,9 @@ export class OrderDlqConsumer {
     amqpMsg: ConsumeMessage,
   ) {
     await runWithCorrelation(amqpMsg, async () => {
-      this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_CANCEL_REQUESTED}`);
+      this.logger.warn(
+        `☠️ DLQ received — queue: ${DLQ.ORDER_CANCEL_REQUESTED}`,
+      );
 
       await this.orderService.saveFailedMessage({
         queue: DLQ.ORDER_CANCEL_REQUESTED,
@@ -92,10 +91,7 @@ export class OrderDlqConsumer {
     queue: DLQ.ORDER_PAYMENT_RESULT,
     queueOptions: { durable: true },
   })
-  async handlePaymentResultDlq(
-    event: PaymentEvents,
-    amqpMsg: ConsumeMessage,
-  ) {
+  async handlePaymentResultDlq(event: PaymentEvents, amqpMsg: ConsumeMessage) {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_PAYMENT_RESULT}`);
 

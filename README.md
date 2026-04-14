@@ -80,6 +80,7 @@ payment-microservices/
 │   │       ├── modules/
 │   │       │   └── order/
 │   │       │       ├── consumers/
+│   │       │       │   ├── order-dlq.consumer.ts
 │   │       │       │   └── order.consumer.ts
 │   │       │       ├── controllers/
 │   │       │       │   └── order.controller.ts
@@ -97,6 +98,7 @@ payment-microservices/
 │           ├── modules/
 │           │   └── payment/
 │           │       ├── consumers/
+│           │       │   ├── payment-dlq.consumer.ts
 │           │       │   └── payment.consumer.ts
 │           │       ├── controllers/
 │           │       │   └── payment.controller.ts
