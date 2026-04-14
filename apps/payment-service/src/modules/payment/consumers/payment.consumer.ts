@@ -14,7 +14,7 @@ import {
 } from '@messaging/rabbitmq';
 import { OrderCancelledEvent, OrderCreatedEvent } from '@contracts/events';
 
-import { PaymentService } from './payment.service';
+import { PaymentService } from '../services/payment.service';
 
 @Injectable()
 export class PaymentConsumer {

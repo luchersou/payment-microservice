@@ -1,9 +1,9 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 
-import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
-import { PaymentResponseDto } from './dto/payment-response.dto';
-import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
-import { PaymentService } from './payment.service';
+import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
+import { PaymentResponseDto } from '../dto/payment-response.dto';
+import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
+import { PaymentService } from '../services/payment.service';
 
 @Controller('payments')
 export class PaymentsController {

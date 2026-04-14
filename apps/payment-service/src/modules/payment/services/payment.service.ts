@@ -16,9 +16,9 @@ import {
   PaymentFailedEvent,
 } from '@contracts/events';
 
-import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
-import { PaymentResponseDto } from './dto/payment-response.dto';
-import { PaymentStatsResponseDto } from './dto/payment-stats-response.dto';
+import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
+import { PaymentResponseDto } from '../dto/payment-response.dto';
+import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
 
 @Injectable()
 export class PaymentService {

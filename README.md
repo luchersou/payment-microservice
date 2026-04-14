@@ -76,36 +76,34 @@ payment-microservices/
 │   │
 │   ├── order-service/               # Order Microservice (Port 3001)
 │   │   ├── prisma/
-│   │   │   ├── generated/
-│   │   │   ├── migrations/
-│   │   │   ├── prisma.module.ts
-│   │   │   ├── prisma.service.ts
-│   │   │   └── schema.prisma
 │   │   └── src/
 │   │       ├── modules/
 │   │       │   └── order/
+│   │       │       ├── consumers/
+│   │       │       │   └── order.consumer.ts
+│   │       │       ├── controllers/
+│   │       │       │   └── order.controller.ts
+│   │       │       ├── services/
+│   │       │       │   └── order.service.ts
 │   │       │       ├── dto/
-│   │       │       ├── order.consumer.ts
-│   │       │       ├── order.controller.ts
-│   │       │       └── order.service.ts
+│   │       │       └── order.module.ts
 │   │       ├── app.module.ts
 │   │       ├── main.ts
 │   │       └── rabbitmq.config.ts
 │   │
 │   └── payment-service/             # Payment Microservice (Port 3002)
 │       ├── prisma/
-│       │   ├── generated/
-│       │   ├── migrations/
-│       │   ├── prisma.module.ts
-│       │   ├── prisma.service.ts
-│       │   └── schema.prisma
 │       └── src/
 │           ├── modules/
 │           │   └── payment/
+│           │       ├── consumers/
+│           │       │   └── payment.consumer.ts
+│           │       ├── controllers/
+│           │       │   └── payment.controller.ts
+│           │       ├── services/
+│           │       │   └── payment.service.ts
 │           │       ├── dto/
-│           │       ├── payment.consumer.ts
-│           │       ├── payment.controller.ts
-│           │       └── payment.service.ts
+│           │       └── payment.module.ts
 │           ├── app.module.ts
 │           ├── main.ts
 │           └── rabbitmq.config.ts
