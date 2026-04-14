@@ -166,6 +166,33 @@ export class OrderService {
     });
   }
 
+  async saveFailedMessage(data: {
+    queue: string;
+    routingKey: string;
+    payload: unknown;
+    error?: string;
+  }): Promise<void> {
+    try {
+      await this.prisma.failedMessage.create({
+        data: {
+          queue: data.queue,
+          routingKey: data.routingKey,
+          payload: data.payload as object,
+          error: data.error,
+        },
+      });
+
+      this.logger.log(
+        `💾 Failed message saved — queue: ${data.queue} | routingKey: ${data.routingKey}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `❌ Could not save failed message to database — queue: ${data.queue} | routingKey: ${data.routingKey}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+  }
+
   // ─────────────────────────────────────────────
   // PRIVATE — ORDER CANCELLATION
   // ─────────────────────────────────────────────
