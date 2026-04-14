@@ -15,8 +15,8 @@ import {
 } from '@contracts/events';
 import { CancelReason } from '@contracts/types';
 
-import { OrderResponseDto } from './dto/order-response.dto';
-import { PaginatedOrdersResponseDto } from './dto/paginated-orders-response.dto';
+import { OrderResponseDto } from '../dto/order-response.dto';
+import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
 
 @Injectable()
 export class OrderService {

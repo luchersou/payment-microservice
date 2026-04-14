@@ -22,7 +22,7 @@ import {
 } from '@contracts/events';
 import { EventTypes } from '@contracts/types';
 
-import { OrderService } from './order.service';
+import { OrderService } from '../services/order.service';
 
 type PaymentEvents =
   | PaymentApprovedEvent
