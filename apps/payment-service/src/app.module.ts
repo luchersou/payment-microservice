@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+
 import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import { PrismaModule } from '@payment/prisma/prisma.module';
 

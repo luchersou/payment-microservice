@@ -1,6 +1,7 @@
-import { correlationIdStorage } from '@common/context/correlation-id.context';
 import { randomUUID } from 'crypto';
 import { NextFunction, Request, Response } from 'express';
+
+import { correlationIdStorage } from '@common/context/correlation-id.context';
 
 export function correlationIdMiddleware(
   req: Request,

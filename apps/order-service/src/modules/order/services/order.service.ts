@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { Order, OrderStatus, Prisma } from '@order/prisma/generated/prisma/client';
+import {
+  Order,
+  OrderStatus,
+  Prisma,
+} from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
@@ -31,7 +35,10 @@ export class OrderService {
   // QUERIES
   // ─────────────────────────────────────────────
 
-  async findAll(page: number, limit: number): Promise<PaginatedOrdersResponseDto> {
+  async findAll(
+    page: number,
+    limit: number,
+  ): Promise<PaginatedOrdersResponseDto> {
     const skip = (page - 1) * limit;
 
     const [orders, total] = await Promise.all([
@@ -101,7 +108,9 @@ export class OrderService {
     const order = await this.waitForOrder(orderId);
 
     if (!order) {
-      this.logger.warn(`⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`);
+      this.logger.warn(
+        `⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`,
+      );
       return;
     }
 
@@ -111,7 +120,9 @@ export class OrderService {
     }
 
     if (order.status !== OrderStatus.PENDING_PAYMENT) {
-      this.logger.warn(`⚠️ Cannot complete order ${orderId} with status ${order.status}`);
+      this.logger.warn(
+        `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
+      );
       return;
     }
 
@@ -134,10 +145,14 @@ export class OrderService {
   }
 
   async failOrder(orderId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
 
     if (!order) {
-      this.logger.warn(`⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`);
+      this.logger.warn(
+        `⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`,
+      );
       return;
     }
 
@@ -191,11 +206,16 @@ export class OrderService {
         { correlationId },
       );
 
-      this.logger.log(`✅ Order ${orderId} updated to ${newStatus} successfully`);
+      this.logger.log(
+        `✅ Order ${orderId} updated to ${newStatus} successfully`,
+      );
 
       return updatedOrder;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         this.logger.warn(`⚠️ Order ${orderId} already finalized. Skipping.`);
         return;
       }
@@ -224,11 +244,15 @@ export class OrderService {
     delayMs = 300,
   ): Promise<Order | null> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+      });
 
       if (order) {
         if (attempt > 1) {
-          this.logger.log(`✅ Order ${orderId} found on retry ${attempt}/${maxRetries}`);
+          this.logger.log(
+            `✅ Order ${orderId} found on retry ${attempt}/${maxRetries}`,
+          );
         }
         return order;
       }

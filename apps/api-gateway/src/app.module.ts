@@ -1,10 +1,10 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
-import { correlationIdMiddleware } from './common/middleware';
 import { RabbitMQModule } from '@messaging/rabbitmq';
 
 import { CustomHttpModule } from './common/http';
+import { correlationIdMiddleware } from './common/middleware';
 import { OrdersModule } from './modules/orders';
 import { PaymentsModule } from './modules/payments';
 

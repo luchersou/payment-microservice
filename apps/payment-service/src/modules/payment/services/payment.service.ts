@@ -33,7 +33,10 @@ export class PaymentService {
   // QUERIES
   // ─────────────────────────────────────────────
 
-  async findAll(page: number, limit: number): Promise<PaginatedPaymentsResponseDto> {
+  async findAll(
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPaymentsResponseDto> {
     const skip = (page - 1) * limit;
 
     const [payments, total] = await Promise.all([
@@ -67,7 +70,9 @@ export class PaymentService {
   }
 
   async findByOrderId(orderId: string): Promise<PaymentResponseDto> {
-    const payment = await this.prisma.payment.findUnique({ where: { orderId } });
+    const payment = await this.prisma.payment.findUnique({
+      where: { orderId },
+    });
 
     if (!payment) {
       throw new NotFoundException(`Payment for order ${orderId} not found`);
@@ -125,7 +130,9 @@ export class PaymentService {
   // PRIVATE — PAYMENT PROCESSING
   // ─────────────────────────────────────────────
 
-  private async createPayment(payload: OrderCreatedPayload): Promise<Payment | null> {
+  private async createPayment(
+    payload: OrderCreatedPayload,
+  ): Promise<Payment | null> {
     try {
       return await this.prisma.payment.create({
         data: {
@@ -150,7 +157,10 @@ export class PaymentService {
     }
   }
 
-  private async processPaymentResult(payment: Payment, payload: OrderCreatedPayload) {
+  private async processPaymentResult(
+    payment: Payment,
+    payload: OrderCreatedPayload,
+  ) {
     try {
       const result = await this.simulatePaymentGateway(payload.total);
 
@@ -191,7 +201,9 @@ export class PaymentService {
 
       case PaymentStatus.DECLINED:
       case PaymentStatus.FAILED:
-        this.logger.log(`ℹ️ Payment ${payment.id} already ${payment.status}, skipping`);
+        this.logger.log(
+          `ℹ️ Payment ${payment.id} already ${payment.status}, skipping`,
+        );
         return;
 
       default:
@@ -200,14 +212,18 @@ export class PaymentService {
   }
 
   private async approvePayment(paymentId: string, orderId: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
 
     if (!payment) {
       throw new Error(`Payment ${paymentId} not found`);
     }
 
     if (payment.status !== PaymentStatus.PROCESSING) {
-      this.logger.warn(`⚠️ Payment ${paymentId} is ${payment.status}, cannot approve`);
+      this.logger.warn(
+        `⚠️ Payment ${paymentId} is ${payment.status}, cannot approve`,
+      );
       return;
     }
 
@@ -221,22 +237,33 @@ export class PaymentService {
     await this.amqpConnection.publish(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_APPROVED,
-      new PaymentApprovedEvent({ orderId, transactionId: paymentId }, correlationId),
+      new PaymentApprovedEvent(
+        { orderId, transactionId: paymentId },
+        correlationId,
+      ),
       { correlationId },
     );
 
     this.logger.log(`✅ Payment approved for order ${orderId}`);
   }
 
-  private async declinePayment(paymentId: string, orderId: string, reason?: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+  private async declinePayment(
+    paymentId: string,
+    orderId: string,
+    reason?: string,
+  ) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
 
     if (!payment) {
       throw new Error(`Payment ${paymentId} not found`);
     }
 
     if (payment.status !== PaymentStatus.PROCESSING) {
-      this.logger.warn(`⚠️ Payment ${paymentId} is ${payment.status}, cannot decline`);
+      this.logger.warn(
+        `⚠️ Payment ${paymentId} is ${payment.status}, cannot decline`,
+      );
       return;
     }
 
@@ -263,7 +290,9 @@ export class PaymentService {
   private async failPayment(orderId: string, error: any) {
     this.logger.error(`❌ Payment failed for order ${orderId}`, error);
 
-    const payment = await this.prisma.payment.findUnique({ where: { orderId } });
+    const payment = await this.prisma.payment.findUnique({
+      where: { orderId },
+    });
 
     if (payment) {
       await this.prisma.payment.update({

@@ -1,4 +1,4 @@
-import { DLQ, Exchanges } from '@messaging/rabbitmq';
+import { Exchanges, DLQ } from '../constants';
 
 /**
  * Queue options for RabbitMQ queues.
