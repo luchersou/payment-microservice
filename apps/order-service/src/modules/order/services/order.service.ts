@@ -18,6 +18,7 @@ import {
   OrderCreatedEvent,
 } from '@contracts/events';
 import { CancelReason } from '@contracts/types';
+import { MetricEventTypes } from '@contracts/types';
 
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
@@ -78,7 +79,7 @@ export class OrderService {
   // ─────────────────────────────────────────────
 
   async createOrder(payload: CreateOrderRequestedPayload) {
-    const endTimer = this.metrics.startMessageProcessingTimer('create_order_requested');
+    const endTimer = this.metrics.startMessageProcessingTimer(MetricEventTypes.CREATE_ORDER_REQUESTED);
 
     try {
       const order = await this.prisma.order.create({
@@ -112,7 +113,7 @@ export class OrderService {
   }
 
   async completeOrder(orderId: string) {
-    const endTimer = this.metrics.startMessageProcessingTimer('payment_approved');
+    const endTimer = this.metrics.startMessageProcessingTimer(MetricEventTypes.PAYMENT_APPROVED);
     try {
       this.logger.log(`✅ Completing order ${orderId}`);
 
@@ -160,7 +161,7 @@ export class OrderService {
   }
 
   async failOrder(orderId: string) {
-    const endTimer = this.metrics.startMessageProcessingTimer('payment_failed');
+    const endTimer = this.metrics.startMessageProcessingTimer(MetricEventTypes.PAYMENT_FAILED);
     try {
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
@@ -222,8 +223,8 @@ export class OrderService {
   private async cancelOrderInternal(orderId: string, reason: CancelReason) {
     const endTimer = this.metrics.startMessageProcessingTimer(
       reason === CancelReason.PAYMENT_DECLINED
-        ? 'payment_declined'
-        : 'order_cancel_requested',
+        ? MetricEventTypes.PAYMENT_DECLINED
+        : MetricEventTypes.ORDER_CANCEL_REQUESTED,
     );
     try {
       this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
