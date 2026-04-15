@@ -15,6 +15,7 @@ import {
 } from '@contracts/events';
 
 import { OrderService } from '../services/order.service';
+import { OrderMetricsService } from '../../metrics/metrics.service';
 
 type PaymentEvents =
   | PaymentApprovedEvent
@@ -25,11 +26,10 @@ type PaymentEvents =
 export class OrderDlqConsumer {
   private readonly logger = new CorrelationLogger(OrderDlqConsumer.name);
 
-  constructor(private readonly orderService: OrderService) {}
-
-  // ========================
-  // ORDER CREATE DLQ
-  // ========================
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly metrics: OrderMetricsService,
+  ) {}
 
   @RabbitSubscribe({
     exchange: Exchanges.DLX,
@@ -44,6 +44,11 @@ export class OrderDlqConsumer {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_CREATE}`);
 
+      this.metrics.incrementDlqMessages(
+        DLQ.ORDER_CREATE,
+        amqpMsg.fields.routingKey,
+      );
+
       await this.orderService.saveFailedMessage({
         queue: DLQ.ORDER_CREATE,
         routingKey: amqpMsg.fields.routingKey,
@@ -52,10 +57,6 @@ export class OrderDlqConsumer {
       });
     });
   }
-
-  // ========================
-  // ORDER CANCEL REQUESTED DLQ
-  // ========================
 
   @RabbitSubscribe({
     exchange: Exchanges.DLX,
@@ -72,6 +73,11 @@ export class OrderDlqConsumer {
         `☠️ DLQ received — queue: ${DLQ.ORDER_CANCEL_REQUESTED}`,
       );
 
+      this.metrics.incrementDlqMessages(
+        DLQ.ORDER_CANCEL_REQUESTED,
+        amqpMsg.fields.routingKey,
+      );
+
       await this.orderService.saveFailedMessage({
         queue: DLQ.ORDER_CANCEL_REQUESTED,
         routingKey: amqpMsg.fields.routingKey,
@@ -80,10 +86,6 @@ export class OrderDlqConsumer {
       });
     });
   }
-
-  // ========================
-  // ORDER PAYMENT RESULT DLQ
-  // ========================
 
   @RabbitSubscribe({
     exchange: Exchanges.DLX,
@@ -94,6 +96,11 @@ export class OrderDlqConsumer {
   async handlePaymentResultDlq(event: PaymentEvents, amqpMsg: ConsumeMessage) {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_PAYMENT_RESULT}`);
+
+      this.metrics.incrementDlqMessages(
+        DLQ.ORDER_PAYMENT_RESULT,
+        amqpMsg.fields.routingKey,
+      );
 
       await this.orderService.saveFailedMessage({
         queue: DLQ.ORDER_PAYMENT_RESULT,
