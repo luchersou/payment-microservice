@@ -9,12 +9,16 @@ import { DLQ, Exchanges } from '@messaging/rabbitmq';
 import { OrderCancelledEvent, OrderCreatedEvent } from '@contracts/events';
 
 import { PaymentService } from '../services/payment.service';
+import { PaymentMetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
 export class PaymentDlqConsumer {
   private readonly logger = new CorrelationLogger(PaymentDlqConsumer.name);
 
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(
+    private readonly paymentService: PaymentService,
+    private readonly metrics: PaymentMetricsService,
+  ) {}
 
   // ========================
   // PAYMENT ORDER CREATED DLQ
@@ -32,6 +36,11 @@ export class PaymentDlqConsumer {
   ) {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.PAYMENT_ORDER_CREATED}`);
+
+      this.metrics.incrementDlqMessages(
+        DLQ.PAYMENT_ORDER_CREATED,
+        amqpMsg.fields.routingKey,
+      );
 
       await this.paymentService.saveFailedMessage({
         queue: DLQ.PAYMENT_ORDER_CREATED,
@@ -59,6 +68,11 @@ export class PaymentDlqConsumer {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(
         `☠️ DLQ received — queue: ${DLQ.PAYMENT_ORDER_CANCELLED}`,
+      );
+
+      this.metrics.incrementDlqMessages(
+        DLQ.PAYMENT_ORDER_CANCELLED,
+        amqpMsg.fields.routingKey,
       );
 
       await this.paymentService.saveFailedMessage({

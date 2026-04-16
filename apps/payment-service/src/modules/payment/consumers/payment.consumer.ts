@@ -13,14 +13,19 @@ import {
   RoutingKeys,
 } from '@messaging/rabbitmq';
 import { OrderCancelledEvent, OrderCreatedEvent } from '@contracts/events';
+import { MetricEventTypes } from '@contracts/types';
 
 import { PaymentService } from '../services/payment.service';
+import { PaymentMetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
 export class PaymentConsumer {
   private readonly logger = new CorrelationLogger(PaymentConsumer.name);
 
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(
+    private readonly paymentService: PaymentService,
+    private readonly metrics: PaymentMetricsService,
+  ) {}
 
   // ========================
   // ORDER CREATED
@@ -36,6 +41,10 @@ export class PaymentConsumer {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.log(`📥 Received OrderCreated: ${event.payload.orderId}`);
 
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricEventTypes.PAYMENT_APPROVED,
+      );
+
       try {
         await this.paymentService.handleOrderCreated(event.payload);
       } catch (error) {
@@ -43,6 +52,8 @@ export class PaymentConsumer {
           `❌ Error processing OrderCreated for order ${event.payload.orderId}`,
         );
         throw error;
+      } finally {
+        endTimer();
       }
     });
   }
@@ -64,6 +75,10 @@ export class PaymentConsumer {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.log(`📥 Received OrderCancelled: ${event.payload.orderId}`);
 
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricEventTypes.ORDER_CANCEL_REQUESTED,
+      );
+
       try {
         await this.paymentService.handleOrderCancelled(event.payload);
       } catch (error) {
@@ -71,6 +86,8 @@ export class PaymentConsumer {
           `❌ Error processing OrderCancelled for order ${event.payload.orderId}`,
         );
         throw error;
+      } finally {
+        endTimer();
       }
     });
   }
