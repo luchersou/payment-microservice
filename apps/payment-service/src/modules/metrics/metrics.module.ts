@@ -25,4 +25,4 @@ import { PaymentMetricsService } from './metrics.service';
   ],
   exports: [PaymentMetricsService],
 })
-export class PaymentMetricsModule {}
+export class MetricsModule {}
