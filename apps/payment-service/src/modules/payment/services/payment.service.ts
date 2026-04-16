@@ -15,7 +15,7 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/events';
-import { MetricEventTypes } from '@contracts/types';
+import { MetricNames } from '@contracts/types';
 
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
 import { PaymentResponseDto } from '../dto/payment-response.dto';
@@ -216,7 +216,7 @@ export class PaymentService {
 
   private async approvePayment(paymentId: string, orderId: string) {
     const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricEventTypes.PAYMENT_APPROVED,
+      MetricNames.PAYMENT_APPROVAL_DURATION,
     );
 
     try {
@@ -265,7 +265,7 @@ export class PaymentService {
     reason?: string,
   ) {
     const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricEventTypes.PAYMENT_DECLINED,
+      MetricNames.PAYMENT_DECLINE_DURATION,
     );
 
     try {
@@ -310,7 +310,7 @@ export class PaymentService {
 
   private async failPayment(orderId: string, error: any) {
     const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricEventTypes.PAYMENT_FAILED,
+      MetricNames.PAYMENT_FAILURE_DURATION,
     );
 
     try {

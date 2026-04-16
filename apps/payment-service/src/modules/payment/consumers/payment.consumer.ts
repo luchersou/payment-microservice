@@ -13,7 +13,7 @@ import {
   RoutingKeys,
 } from '@messaging/rabbitmq';
 import { OrderCancelledEvent, OrderCreatedEvent } from '@contracts/events';
-import { MetricEventTypes } from '@contracts/types';
+import { MetricNames } from '@contracts/types';
 
 import { PaymentService } from '../services/payment.service';
 import { PaymentMetricsService } from '../../metrics/metrics.service';
@@ -42,7 +42,7 @@ export class PaymentConsumer {
       this.logger.log(`📥 Received OrderCreated: ${event.payload.orderId}`);
 
       const endTimer = this.metrics.startMessageProcessingTimer(
-        MetricEventTypes.PAYMENT_APPROVED,
+        MetricNames.PAYMENT_ORDER_CREATED_PROCESSING_DURATION,
       );
 
       try {
@@ -76,7 +76,7 @@ export class PaymentConsumer {
       this.logger.log(`📥 Received OrderCancelled: ${event.payload.orderId}`);
 
       const endTimer = this.metrics.startMessageProcessingTimer(
-        MetricEventTypes.ORDER_CANCEL_REQUESTED,
+        MetricNames.PAYMENT_ORDER_CANCELLED_PROCESSING_DURATION,
       );
 
       try {
