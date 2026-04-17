@@ -187,6 +187,7 @@ export class PaymentService {
           where: { id: payment.id },
           data: { status: PaymentStatus.REFUNDED },
         });
+        this.metrics.incrementPaymentsRefunded();
         this.logger.log(
           `💰 Payment ${payment.id} marked as REFUNDED for order ${orderId}`,
         );
@@ -197,6 +198,7 @@ export class PaymentService {
           where: { id: payment.id },
           data: { status: PaymentStatus.DECLINED },
         });
+        this.metrics.incrementPaymentsDeclined('order_cancelled');
         this.logger.log(
           `✅ Payment ${payment.id} declined due to order cancellation`,
         );

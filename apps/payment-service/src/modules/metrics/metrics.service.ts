@@ -7,6 +7,7 @@ export class PaymentMetricsService {
   private readonly paymentsApprovedTotal: Counter;
   private readonly paymentsDeclinedTotal: Counter;
   private readonly paymentsFailedTotal: Counter;
+  private readonly paymentsRefundedTotal: Counter;
   private readonly dlqMessagesTotal: Counter;
   private readonly messageProcessingDuration: Histogram;
 
@@ -25,6 +26,11 @@ export class PaymentMetricsService {
     this.paymentsFailedTotal = this.getOrCreateCounter({
       name: 'payments_failed_total',
       help: 'Total number of payments failed (technical error)',
+    });
+
+    this.paymentsRefundedTotal = this.getOrCreateCounter({
+      name: 'payments_refunded_total',
+      help: 'Total number of payments refunded',
     });
 
     this.dlqMessagesTotal = this.getOrCreateCounter({
@@ -56,6 +62,10 @@ export class PaymentMetricsService {
 
   incrementPaymentsFailed() {
     this.paymentsFailedTotal.inc();
+  }
+
+  incrementPaymentsRefunded() {
+    this.paymentsRefundedTotal.inc();
   }
 
   incrementDlqMessages(queue: string, routingKey: string) {
