@@ -5,9 +5,9 @@ import { RabbitMQModule } from '@messaging/rabbitmq';
 
 import { CustomHttpModule } from './common/http';
 import { correlationIdMiddleware } from './common/middleware';
+import { MetricsModule } from './modules/metrics/metrics.module';
 import { OrdersModule } from './modules/orders';
 import { PaymentsModule } from './modules/payments';
-import { MetricsModule } from './modules/metrics/metrics.module';
 
 @Module({
   imports: [

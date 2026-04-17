@@ -23,8 +23,8 @@ import {
 import { EventTypes } from '@contracts/types';
 import { MetricNames } from '@contracts/types';
 
-import { OrderService } from '../services/order.service';
 import { OrderMetricsService } from '../../metrics/metrics.service';
+import { OrderService } from '../services/order.service';
 
 type PaymentEvents =
   | PaymentApprovedEvent

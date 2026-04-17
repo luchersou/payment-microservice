@@ -4,6 +4,7 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
+
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
@@ -32,22 +33,14 @@ export class HttpMetricsInterceptor implements NestInterceptor {
         next: () => {
           const statusCode = response.statusCode;
 
-          this.metrics.incrementHttpRequests(
-            method,
-            route,
-            statusCode,
-          );
+          this.metrics.incrementHttpRequests(method, route, statusCode);
 
           endTimer({ status_code: statusCode });
         },
         error: () => {
           const statusCode = response.statusCode || 500;
 
-          this.metrics.incrementHttpRequests(
-            method,
-            route,
-            statusCode,
-          );
+          this.metrics.incrementHttpRequests(method, route, statusCode);
 
           endTimer({ status_code: statusCode });
         },

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { Registry } from 'prom-client';
 
-import { MetricsService } from './metrics.service';
-import { MetricsController } from './metrics.controller';
 import { HttpMetricsInterceptor } from './http-metrics.interceptor';
+import { MetricsController } from './metrics.controller';
+import { MetricsService } from './metrics.service';
 
 @Module({
   imports: [

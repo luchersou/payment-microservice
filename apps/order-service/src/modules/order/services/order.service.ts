@@ -20,9 +20,9 @@ import {
 import { CancelReason } from '@contracts/types';
 import { MetricNames } from '@contracts/types';
 
+import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
-import { OrderMetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
 export class OrderService {
@@ -116,7 +116,7 @@ export class OrderService {
 
   async completeOrder(orderId: string) {
     const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION
+      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
     );
     try {
       this.logger.log(`✅ Completing order ${orderId}`);
@@ -166,7 +166,7 @@ export class OrderService {
 
   async failOrder(orderId: string) {
     const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION
+      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
     );
     try {
       const order = await this.prisma.order.findUnique({

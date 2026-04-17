@@ -1,6 +1,7 @@
 import { Controller, Get, Res } from '@nestjs/common';
-import { Registry } from 'prom-client';
+
 import { Response } from 'express';
+import { Registry } from 'prom-client';
 
 @Controller('metrics')
 export class MetricsController {

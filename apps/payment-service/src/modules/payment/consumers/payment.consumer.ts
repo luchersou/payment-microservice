@@ -15,8 +15,8 @@ import {
 import { OrderCancelledEvent, OrderCreatedEvent } from '@contracts/events';
 import { MetricNames } from '@contracts/types';
 
-import { PaymentService } from '../services/payment.service';
 import { PaymentMetricsService } from '../../metrics/metrics.service';
+import { PaymentService } from '../services/payment.service';
 
 @Injectable()
 export class PaymentConsumer {

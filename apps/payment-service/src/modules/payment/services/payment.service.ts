@@ -17,10 +17,10 @@ import {
 } from '@contracts/events';
 import { MetricNames } from '@contracts/types';
 
+import { PaymentMetricsService } from '../../metrics/metrics.service';
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
 import { PaymentResponseDto } from '../dto/payment-response.dto';
 import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
-import { PaymentMetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
 export class PaymentService {

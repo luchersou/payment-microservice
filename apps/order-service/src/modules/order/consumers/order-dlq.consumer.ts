@@ -15,8 +15,8 @@ import {
 } from '@contracts/events';
 import { MetricNames } from '@contracts/types';
 
-import { OrderService } from '../services/order.service';
 import { OrderMetricsService } from '../../metrics/metrics.service';
+import { OrderService } from '../services/order.service';
 
 type PaymentEvents =
   | PaymentApprovedEvent
@@ -130,10 +130,7 @@ export class OrderDlqConsumer {
     queue: DLQ.ORDER_PAYMENT_RESULT,
     queueOptions: { durable: true },
   })
-  async handlePaymentResultDlq(
-    event: PaymentEvents,
-    amqpMsg: ConsumeMessage,
-  ) {
+  async handlePaymentResultDlq(event: PaymentEvents, amqpMsg: ConsumeMessage) {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_PAYMENT_RESULT}`);
 
