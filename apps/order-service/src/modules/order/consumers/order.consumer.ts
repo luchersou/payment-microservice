@@ -21,7 +21,9 @@ import {
   PaymentFailedEvent,
 } from '@contracts/events';
 import { EventTypes } from '@contracts/types';
+import { MetricNames } from '@contracts/types';
 
+import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderService } from '../services/order.service';
 
 type PaymentEvents =
@@ -33,10 +35,13 @@ type PaymentEvents =
 export class OrderConsumer {
   private readonly logger = new CorrelationLogger(OrderConsumer.name);
 
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly metrics: OrderMetricsService,
+  ) {}
 
   // ========================
-  // ORDER PROCESS QUEUE
+  // CREATE ORDER
   // ========================
 
   @RabbitSubscribe({
@@ -54,9 +59,26 @@ export class OrderConsumer {
         `📥 Received CreateOrderRequested: ${event.payload.userId}`,
       );
 
-      await this.orderService.createOrder(event.payload);
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricNames.ORDER_CREATED_PROCESSING_DURATION,
+      );
+
+      try {
+        await this.orderService.createOrder(event.payload);
+      } catch (error) {
+        this.logger.error(
+          `❌ Error processing CreateOrderRequested for user ${event.payload.userId}`,
+        );
+        throw error;
+      } finally {
+        endTimer();
+      }
     });
   }
+
+  // ========================
+  // ORDER CANCEL REQUESTED
+  // ========================
 
   @RabbitSubscribe({
     exchange: Exchanges.ORDERS,
@@ -73,7 +95,20 @@ export class OrderConsumer {
         `📥 Received OrderCancelRequested: ${event.payload.orderId}`,
       );
 
-      await this.orderService.cancelByUser(event.payload.orderId);
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricNames.ORDER_CANCELLED_PROCESSING_DURATION,
+      );
+
+      try {
+        await this.orderService.cancelByUser(event.payload.orderId);
+      } catch (error) {
+        this.logger.error(
+          `❌ Error processing OrderCancelRequested for order ${event.payload.orderId}`,
+        );
+        throw error;
+      } finally {
+        endTimer();
+      }
     });
   }
 
@@ -97,22 +132,35 @@ export class OrderConsumer {
 
       this.logger.log(`📥 ${event.eventType} received for order ${orderId}`);
 
-      switch (event.eventType) {
-        case EventTypes.PAYMENT_APPROVED:
-          await this.orderService.completeOrder(orderId);
-          break;
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
+      );
 
-        case EventTypes.PAYMENT_DECLINED:
-          await this.orderService.cancelByPaymentDeclined(orderId);
-          break;
+      try {
+        switch (event.eventType) {
+          case EventTypes.PAYMENT_APPROVED:
+            await this.orderService.completeOrder(orderId);
+            break;
 
-        case EventTypes.PAYMENT_FAILED:
-          await this.orderService.failOrder(orderId);
-          break;
+          case EventTypes.PAYMENT_DECLINED:
+            await this.orderService.cancelByPaymentDeclined(orderId);
+            break;
 
-        default:
-          this.logger.error(`❌ Unknown payment event: ${event}`);
-          break;
+          case EventTypes.PAYMENT_FAILED:
+            await this.orderService.failOrder(orderId);
+            break;
+
+          default:
+            this.logger.error(`❌ Unknown payment event: ${event}`);
+            return;
+        }
+      } catch (error) {
+        this.logger.error(
+          `❌ Error processing ${event.eventType} for order ${orderId}`,
+        );
+        throw error;
+      } finally {
+        endTimer();
       }
     });
   }

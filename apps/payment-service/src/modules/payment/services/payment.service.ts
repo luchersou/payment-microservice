@@ -15,7 +15,9 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/events';
+import { MetricNames } from '@contracts/types';
 
+import { PaymentMetricsService } from '../../metrics/metrics.service';
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
 import { PaymentResponseDto } from '../dto/payment-response.dto';
 import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
@@ -27,6 +29,7 @@ export class PaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly amqpConnection: AmqpConnection,
+    private readonly metrics: PaymentMetricsService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -184,6 +187,7 @@ export class PaymentService {
           where: { id: payment.id },
           data: { status: PaymentStatus.REFUNDED },
         });
+        this.metrics.incrementPaymentsRefunded();
         this.logger.log(
           `💰 Payment ${payment.id} marked as REFUNDED for order ${orderId}`,
         );
@@ -194,6 +198,7 @@ export class PaymentService {
           where: { id: payment.id },
           data: { status: PaymentStatus.DECLINED },
         });
+        this.metrics.incrementPaymentsDeclined('order_cancelled');
         this.logger.log(
           `✅ Payment ${payment.id} declined due to order cancellation`,
         );
@@ -212,39 +217,48 @@ export class PaymentService {
   }
 
   private async approvePayment(paymentId: string, orderId: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id: paymentId },
-    });
-
-    if (!payment) {
-      throw new Error(`Payment ${paymentId} not found`);
-    }
-
-    if (payment.status !== PaymentStatus.PROCESSING) {
-      this.logger.warn(
-        `⚠️ Payment ${paymentId} is ${payment.status}, cannot approve`,
-      );
-      return;
-    }
-
-    await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: PaymentStatus.APPROVED },
-    });
-
-    const correlationId = CorrelationIdService.getId();
-
-    await this.amqpConnection.publish(
-      Exchanges.PAYMENTS,
-      RoutingKeys.PAYMENT_APPROVED,
-      new PaymentApprovedEvent(
-        { orderId, transactionId: paymentId },
-        correlationId,
-      ),
-      { correlationId },
+    const endTimer = this.metrics.startMessageProcessingTimer(
+      MetricNames.PAYMENT_APPROVAL_DURATION,
     );
 
-    this.logger.log(`✅ Payment approved for order ${orderId}`);
+    try {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: paymentId },
+      });
+
+      if (!payment) {
+        throw new Error(`Payment ${paymentId} not found`);
+      }
+
+      if (payment.status !== PaymentStatus.PROCESSING) {
+        this.logger.warn(
+          `⚠️ Payment ${paymentId} is ${payment.status}, cannot approve`,
+        );
+        return;
+      }
+
+      await this.prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: PaymentStatus.APPROVED },
+      });
+
+      const correlationId = CorrelationIdService.getId();
+
+      await this.amqpConnection.publish(
+        Exchanges.PAYMENTS,
+        RoutingKeys.PAYMENT_APPROVED,
+        new PaymentApprovedEvent(
+          { orderId, transactionId: paymentId },
+          correlationId,
+        ),
+        { correlationId },
+      );
+
+      this.metrics.incrementPaymentsApproved();
+      this.logger.log(`✅ Payment approved for order ${orderId}`);
+    } finally {
+      endTimer();
+    }
   }
 
   private async declinePayment(
@@ -252,66 +266,85 @@ export class PaymentService {
     orderId: string,
     reason?: string,
   ) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id: paymentId },
-    });
-
-    if (!payment) {
-      throw new Error(`Payment ${paymentId} not found`);
-    }
-
-    if (payment.status !== PaymentStatus.PROCESSING) {
-      this.logger.warn(
-        `⚠️ Payment ${paymentId} is ${payment.status}, cannot decline`,
-      );
-      return;
-    }
-
-    await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: PaymentStatus.DECLINED },
-    });
-
-    const correlationId = CorrelationIdService.getId();
-
-    await this.amqpConnection.publish(
-      Exchanges.PAYMENTS,
-      RoutingKeys.PAYMENT_DECLINED,
-      new PaymentDeclinedEvent(
-        { orderId, reason: reason ?? 'Insufficient funds' },
-        correlationId,
-      ),
-      { correlationId },
+    const endTimer = this.metrics.startMessageProcessingTimer(
+      MetricNames.PAYMENT_DECLINE_DURATION,
     );
 
-    this.logger.warn(`⚠️ Payment declined for order ${orderId}`);
+    try {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: paymentId },
+      });
+
+      if (!payment) {
+        throw new Error(`Payment ${paymentId} not found`);
+      }
+
+      if (payment.status !== PaymentStatus.PROCESSING) {
+        this.logger.warn(
+          `⚠️ Payment ${paymentId} is ${payment.status}, cannot decline`,
+        );
+        return;
+      }
+
+      await this.prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: PaymentStatus.DECLINED },
+      });
+
+      const correlationId = CorrelationIdService.getId();
+
+      await this.amqpConnection.publish(
+        Exchanges.PAYMENTS,
+        RoutingKeys.PAYMENT_DECLINED,
+        new PaymentDeclinedEvent(
+          { orderId, reason: reason ?? 'Insufficient funds' },
+          correlationId,
+        ),
+        { correlationId },
+      );
+
+      this.metrics.incrementPaymentsDeclined(reason ?? 'insufficient_funds');
+      this.logger.warn(`⚠️ Payment declined for order ${orderId}`);
+    } finally {
+      endTimer();
+    }
   }
 
   private async failPayment(orderId: string, error: any) {
-    this.logger.error(`❌ Payment failed for order ${orderId}`, error);
-
-    const payment = await this.prisma.payment.findUnique({
-      where: { orderId },
-    });
-
-    if (payment) {
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED },
-      });
-    }
-
-    const correlationId = CorrelationIdService.getId();
-
-    await this.amqpConnection.publish(
-      Exchanges.PAYMENTS,
-      RoutingKeys.PAYMENT_FAILED,
-      new PaymentFailedEvent(
-        { orderId, error: error?.message ?? 'Unknown error' },
-        correlationId,
-      ),
-      { correlationId },
+    const endTimer = this.metrics.startMessageProcessingTimer(
+      MetricNames.PAYMENT_FAILURE_DURATION,
     );
+
+    try {
+      this.logger.error(`❌ Payment failed for order ${orderId}`, error);
+
+      const payment = await this.prisma.payment.findUnique({
+        where: { orderId },
+      });
+
+      if (payment) {
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.FAILED },
+        });
+      }
+
+      const correlationId = CorrelationIdService.getId();
+
+      await this.amqpConnection.publish(
+        Exchanges.PAYMENTS,
+        RoutingKeys.PAYMENT_FAILED,
+        new PaymentFailedEvent(
+          { orderId, error: error?.message ?? 'Unknown error' },
+          correlationId,
+        ),
+        { correlationId },
+      );
+
+      this.metrics.incrementPaymentsFailed();
+    } finally {
+      endTimer();
+    }
   }
 
   // ─────────────────────────────────────────────

@@ -18,7 +18,9 @@ import {
   OrderCreatedEvent,
 } from '@contracts/events';
 import { CancelReason } from '@contracts/types';
+import { MetricNames } from '@contracts/types';
 
+import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
 
@@ -29,6 +31,7 @@ export class OrderService {
   constructor(
     private readonly amqpConnection: AmqpConnection,
     private readonly prisma: PrismaService,
+    private readonly metrics: OrderMetricsService,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -76,64 +79,81 @@ export class OrderService {
   // ─────────────────────────────────────────────
 
   async createOrder(payload: CreateOrderRequestedPayload) {
-    const order = await this.prisma.order.create({
-      data: {
-        id: randomUUID(),
-        userId: payload.userId,
-        total: payload.total,
-        status: OrderStatus.PENDING_PAYMENT,
-      },
-    });
-
-    this.logger.log(`✅ Order ${order.id} persisted`);
-
-    const correlationId = CorrelationIdService.getId();
-
-    await this.amqpConnection.publish(
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CREATED,
-      new OrderCreatedEvent(
-        { orderId: order.id, userId: order.userId, total: order.total },
-        correlationId,
-      ),
-      { correlationId },
+    const endTimer = this.metrics.startMessageProcessingTimer(
+      MetricNames.CREATE_ORDER_REQUEST_DURATION,
     );
 
-    return order;
+    try {
+      const order = await this.prisma.order.create({
+        data: {
+          id: randomUUID(),
+          userId: payload.userId,
+          total: payload.total,
+          status: OrderStatus.PENDING_PAYMENT,
+        },
+      });
+
+      this.logger.log(`✅ Order ${order.id} persisted`);
+      this.metrics.incrementOrdersCreated();
+
+      const correlationId = CorrelationIdService.getId();
+
+      await this.amqpConnection.publish(
+        Exchanges.ORDERS,
+        RoutingKeys.ORDER_CREATED,
+        new OrderCreatedEvent(
+          { orderId: order.id, userId: order.userId, total: order.total },
+          correlationId,
+        ),
+        { correlationId },
+      );
+
+      return order;
+    } finally {
+      endTimer();
+    }
   }
 
   async completeOrder(orderId: string) {
-    this.logger.log(`✅ Completing order ${orderId}`);
+    const endTimer = this.metrics.startMessageProcessingTimer(
+      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
+    );
+    try {
+      this.logger.log(`✅ Completing order ${orderId}`);
 
-    const order = await this.waitForOrder(orderId);
+      const order = await this.waitForOrder(orderId);
 
-    if (!order) {
-      this.logger.warn(
-        `⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`,
-      );
-      return;
+      if (!order) {
+        this.logger.warn(
+          `⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`,
+        );
+        return;
+      }
+
+      if (order.status === OrderStatus.PAID) {
+        this.logger.log(`✅ Order ${orderId} already paid. Skipping.`);
+        return order;
+      }
+
+      if (order.status !== OrderStatus.PENDING_PAYMENT) {
+        this.logger.warn(
+          `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
+        );
+        return;
+      }
+
+      const updated = await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.PAID },
+      });
+
+      this.logger.log(`✅ Order ${orderId} marked as PAID`);
+      this.metrics.incrementOrdersCompleted();
+
+      return updated;
+    } finally {
+      endTimer();
     }
-
-    if (order.status === OrderStatus.PAID) {
-      this.logger.log(`✅ Order ${orderId} already paid. Skipping.`);
-      return order;
-    }
-
-    if (order.status !== OrderStatus.PENDING_PAYMENT) {
-      this.logger.warn(
-        `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
-      );
-      return;
-    }
-
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.PAID },
-    });
-
-    this.logger.log(`✅ Order ${orderId} marked as PAID`);
-
-    return updated;
   }
 
   async cancelByUser(orderId: string) {
@@ -145,25 +165,34 @@ export class OrderService {
   }
 
   async failOrder(orderId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-    });
+    const endTimer = this.metrics.startMessageProcessingTimer(
+      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
+    );
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+      });
 
-    if (!order) {
-      this.logger.warn(
-        `⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`,
-      );
-      return;
+      if (!order) {
+        this.logger.warn(
+          `⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`,
+        );
+        return;
+      }
+
+      if (order.status === OrderStatus.FAILED) {
+        return;
+      }
+
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.FAILED },
+      });
+
+      this.metrics.incrementOrdersFailed();
+    } finally {
+      endTimer();
     }
-
-    if (order.status === OrderStatus.FAILED) {
-      return;
-    }
-
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.FAILED },
-    });
   }
 
   async saveFailedMessage(data: {
@@ -198,55 +227,67 @@ export class OrderService {
   // ─────────────────────────────────────────────
 
   private async cancelOrderInternal(orderId: string, reason: CancelReason) {
-    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
-
-    const order = await this.waitForOrder(orderId);
-
-    if (!order) {
-      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-      return;
-    }
-
-    const newStatus =
+    const metric =
       reason === CancelReason.PAYMENT_DECLINED
-        ? OrderStatus.FAILED
-        : OrderStatus.CANCELLED;
+        ? MetricNames.PAYMENT_DECLINE_DURATION
+        : MetricNames.ORDER_CANCEL_REQUEST_DURATION;
 
+    const endTimer = this.metrics.startMessageProcessingTimer(metric);
     try {
-      const updatedOrder = await this.prisma.order.update({
-        where: {
-          id: orderId,
-          status: { notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED] },
-        },
-        data: { status: newStatus },
-      });
+      this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
 
-      const correlationId = CorrelationIdService.getId();
+      const order = await this.waitForOrder(orderId);
 
-      await this.amqpConnection.publish(
-        Exchanges.ORDERS,
-        RoutingKeys.ORDER_CANCELLED,
-        new OrderCancelledEvent(
-          { orderId: updatedOrder.id, reason, cancelledAt: new Date() },
-          correlationId,
-        ),
-        { correlationId },
-      );
-
-      this.logger.log(
-        `✅ Order ${orderId} updated to ${newStatus} successfully`,
-      );
-
-      return updatedOrder;
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
-        this.logger.warn(`⚠️ Order ${orderId} already finalized. Skipping.`);
+      if (!order) {
+        this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
         return;
       }
-      throw error;
+
+      const newStatus =
+        reason === CancelReason.PAYMENT_DECLINED
+          ? OrderStatus.FAILED
+          : OrderStatus.CANCELLED;
+
+      try {
+        const updatedOrder = await this.prisma.order.update({
+          where: {
+            id: orderId,
+            status: { notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED] },
+          },
+          data: { status: newStatus },
+        });
+
+        const correlationId = CorrelationIdService.getId();
+
+        await this.amqpConnection.publish(
+          Exchanges.ORDERS,
+          RoutingKeys.ORDER_CANCELLED,
+          new OrderCancelledEvent(
+            { orderId: updatedOrder.id, reason, cancelledAt: new Date() },
+            correlationId,
+          ),
+          { correlationId },
+        );
+
+        this.logger.log(
+          `✅ Order ${orderId} updated to ${newStatus} successfully`,
+        );
+
+        this.metrics.incrementOrdersCancelled(reason);
+
+        return updatedOrder;
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2025'
+        ) {
+          this.logger.warn(`⚠️ Order ${orderId} already finalized. Skipping.`);
+          return;
+        }
+        throw error;
+      }
+    } finally {
+      endTimer();
     }
   }
 

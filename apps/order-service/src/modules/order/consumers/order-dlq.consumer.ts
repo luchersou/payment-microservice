@@ -13,7 +13,9 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/events';
+import { MetricNames } from '@contracts/types';
 
+import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderService } from '../services/order.service';
 
 type PaymentEvents =
@@ -25,7 +27,10 @@ type PaymentEvents =
 export class OrderDlqConsumer {
   private readonly logger = new CorrelationLogger(OrderDlqConsumer.name);
 
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly metrics: OrderMetricsService,
+  ) {}
 
   // ========================
   // ORDER CREATE DLQ
@@ -44,12 +49,29 @@ export class OrderDlqConsumer {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_CREATE}`);
 
-      await this.orderService.saveFailedMessage({
-        queue: DLQ.ORDER_CREATE,
-        routingKey: amqpMsg.fields.routingKey,
-        payload: event,
-        error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
-      });
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricNames.ORDER_CREATE_DLQ_PROCESSING_DURATION,
+      );
+
+      try {
+        this.metrics.incrementDlqMessages(
+          MetricNames.ORDER_CREATE_DLQ_COUNT,
+          amqpMsg.fields.routingKey,
+        );
+
+        await this.orderService.saveFailedMessage({
+          queue: DLQ.ORDER_CREATE,
+          routingKey: amqpMsg.fields.routingKey,
+          payload: event,
+          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+        });
+      } catch (error) {
+        this.logger.error(
+          `❌ Failed to process DLQ message for ${DLQ.ORDER_CREATE}`,
+        );
+      } finally {
+        endTimer();
+      }
     });
   }
 
@@ -72,12 +94,29 @@ export class OrderDlqConsumer {
         `☠️ DLQ received — queue: ${DLQ.ORDER_CANCEL_REQUESTED}`,
       );
 
-      await this.orderService.saveFailedMessage({
-        queue: DLQ.ORDER_CANCEL_REQUESTED,
-        routingKey: amqpMsg.fields.routingKey,
-        payload: event,
-        error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
-      });
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricNames.ORDER_CANCEL_REQUESTED_DLQ_PROCESSING_DURATION,
+      );
+
+      try {
+        this.metrics.incrementDlqMessages(
+          MetricNames.ORDER_CANCEL_REQUESTED_DLQ_COUNT,
+          amqpMsg.fields.routingKey,
+        );
+
+        await this.orderService.saveFailedMessage({
+          queue: DLQ.ORDER_CANCEL_REQUESTED,
+          routingKey: amqpMsg.fields.routingKey,
+          payload: event,
+          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+        });
+      } catch (error) {
+        this.logger.error(
+          `❌ Failed to process DLQ message for ${DLQ.ORDER_CANCEL_REQUESTED}`,
+        );
+      } finally {
+        endTimer();
+      }
     });
   }
 
@@ -95,12 +134,29 @@ export class OrderDlqConsumer {
     await runWithCorrelation(amqpMsg, async () => {
       this.logger.warn(`☠️ DLQ received — queue: ${DLQ.ORDER_PAYMENT_RESULT}`);
 
-      await this.orderService.saveFailedMessage({
-        queue: DLQ.ORDER_PAYMENT_RESULT,
-        routingKey: amqpMsg.fields.routingKey,
-        payload: event,
-        error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
-      });
+      const endTimer = this.metrics.startMessageProcessingTimer(
+        MetricNames.ORDER_PAYMENT_RESULT_DLQ_PROCESSING_DURATION,
+      );
+
+      try {
+        this.metrics.incrementDlqMessages(
+          MetricNames.ORDER_PAYMENT_RESULT_DLQ_COUNT,
+          amqpMsg.fields.routingKey,
+        );
+
+        await this.orderService.saveFailedMessage({
+          queue: DLQ.ORDER_PAYMENT_RESULT,
+          routingKey: amqpMsg.fields.routingKey,
+          payload: event,
+          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+        });
+      } catch (error) {
+        this.logger.error(
+          `❌ Failed to process DLQ message for ${DLQ.ORDER_PAYMENT_RESULT}`,
+        );
+      } finally {
+        endTimer();
+      }
     });
   }
 }
