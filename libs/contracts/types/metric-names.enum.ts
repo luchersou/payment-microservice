@@ -5,6 +5,8 @@ export enum MetricNames {
   PAYMENT_ORDER_CREATED_PROCESSING_DURATION = 'messaging.payment.order_created.processing.duration',
   PAYMENT_ORDER_CANCELLED_PROCESSING_DURATION = 'messaging.payment.order_cancelled.processing.duration',
   ORDER_PAYMENT_RESULT_PROCESSING_DURATION = 'messaging.order.payment_result.processing.duration',
+  ORDER_CREATED_PROCESSING_DURATION = 'messaging.order.order_created.processing.duration',
+  ORDER_CANCELLED_PROCESSING_DURATION = 'messaging.order.order_cancelled.processing.duration',
 
   // =====================================================
   // BUSINESS (domain operations - execution time)
