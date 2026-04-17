@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
+
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
-import { Registry, register } from 'prom-client';
+import { register, Registry } from 'prom-client';
 
 import { PaymentMetricsService } from './metrics.service';
 
