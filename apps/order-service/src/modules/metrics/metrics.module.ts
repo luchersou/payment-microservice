@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
-
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
-import { Registry } from 'prom-client';
+import { Registry, register } from 'prom-client';
 
 import { OrderMetricsService } from './metrics.service';
 
@@ -17,9 +16,8 @@ import { OrderMetricsService } from './metrics.service';
     {
       provide: Registry,
       useFactory: () => {
-        const registry = new Registry();
-        registry.setDefaultLabels({ app: 'order-service' });
-        return registry;
+        register.setDefaultLabels({ app: 'order-service' });
+        return register;
       },
     },
     OrderMetricsService,

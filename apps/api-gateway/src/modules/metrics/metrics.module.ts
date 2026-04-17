@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
-
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
-import { Registry } from 'prom-client';
+import { Registry, register } from 'prom-client';
 
 import { HttpMetricsInterceptor } from './http-metrics.interceptor';
 import { MetricsController } from './metrics.controller';
@@ -21,9 +20,8 @@ import { MetricsService } from './metrics.service';
     {
       provide: Registry,
       useFactory: () => {
-        const registry = new Registry();
-        registry.setDefaultLabels({ app: 'api-gateway' });
-        return registry;
+        register.setDefaultLabels({ app: 'api-gateway' });
+        return register;
       },
     },
     MetricsService,
