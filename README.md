@@ -9,6 +9,8 @@ This project was built to showcase real-world backend architecture concepts such
 ![Prisma](https://img.shields.io/badge/Prisma-3982CE?style=for-the-badge&logo=Prisma&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
 
 ---
 
@@ -62,6 +64,11 @@ payment-microservices/
 │   │       │   └── middleware/
 │   │       │       └── correlation-id.middleware.ts
 │   │       ├── modules/
+│   │       │   ├── metrics/
+│   │       │   │   ├── http-metrics.interceptor.ts
+│   │       │   │   ├── metrics.controller.ts
+│   │       │   │   ├── metrics.service.ts
+│   │       │   │   └── metrics.module.ts
 │   │       │   ├── orders/
 │   │       │   │   ├── dto/
 │   │       │   │   ├── orders.controller.ts
@@ -78,6 +85,9 @@ payment-microservices/
 │   │   ├── prisma/
 │   │   └── src/
 │   │       ├── modules/
+│   │       │   ├── metrics/
+│   │       │   │   ├── metrics.service.ts
+│   │       │   │   └── metrics.module.ts
 │   │       │   └── order/
 │   │       │       ├── consumers/
 │   │       │       │   ├── order-dlq.consumer.ts
@@ -96,6 +106,9 @@ payment-microservices/
 │       ├── prisma/
 │       └── src/
 │           ├── modules/
+│   │       │   ├── metrics/
+│   │       │   │   ├── metrics.service.ts
+│   │       │   │   └── metrics.module.ts
 │           │   └── payment/
 │           │       ├── consumers/
 │           │       │   ├── payment-dlq.consumer.ts
@@ -137,6 +150,10 @@ payment-microservices/
 │       │   └── correlation-id.service.ts
 │       └── messaging/
 │           └── run-with-correlation.ts
+│
+├── monitoring/                      # Observability stack (Prometheus + Grafana)
+│   ├── grafana/
+│   └── prometheus.yml
 │
 ├── docker-compose.yml
 └── README.md
