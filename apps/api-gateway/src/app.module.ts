@@ -7,6 +7,7 @@ import { CustomHttpModule } from './common/http';
 import { correlationIdMiddleware } from './common/middleware';
 import { OrdersModule } from './modules/orders';
 import { PaymentsModule } from './modules/payments';
+import { MetricsModule } from './modules/metrics/metrics.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { PaymentsModule } from './modules/payments';
     RabbitMQModule,
     OrdersModule,
     PaymentsModule,
+    MetricsModule,
   ],
 })
 export class AppModule implements NestModule {
