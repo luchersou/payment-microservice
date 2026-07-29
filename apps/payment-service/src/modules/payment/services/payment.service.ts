@@ -11,10 +11,12 @@ import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
   OrderCancelledPayload,
   OrderCreatedPayload,
+} from '@contracts/order-events';
+import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
-} from '@contracts/events';
+} from '@contracts/payment-events';
 import { MetricNames } from '@contracts/types';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';

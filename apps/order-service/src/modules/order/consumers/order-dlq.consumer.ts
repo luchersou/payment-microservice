@@ -9,10 +9,12 @@ import { DLQ, Exchanges } from '@messaging/rabbitmq';
 import {
   CreateOrderRequestedEvent,
   OrderCancelRequestedEvent,
+} from '@contracts/order-events';
+import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
-} from '@contracts/events';
+} from '@contracts/payment-events';
 import { MetricNames } from '@contracts/types';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';

@@ -16,8 +16,8 @@ import {
   CreateOrderRequestedPayload,
   OrderCancelledEvent,
   OrderCreatedEvent,
-} from '@contracts/events';
-import { CancelReason } from '@contracts/types';
+  CancelReason,
+} from '@contracts/order-events';
 import { MetricNames } from '@contracts/types';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
