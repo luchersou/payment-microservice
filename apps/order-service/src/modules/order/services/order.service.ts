@@ -11,14 +11,14 @@ import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
+import { MetricNames } from '@common/metrics';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
+  CancelReason,
   CreateOrderRequestedPayload,
   OrderCancelledEvent,
   OrderCreatedEvent,
-} from '@contracts/events';
-import { CancelReason } from '@contracts/types';
-import { MetricNames } from '@contracts/types';
+} from '@contracts/order-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderResponseDto } from '../dto/order-response.dto';

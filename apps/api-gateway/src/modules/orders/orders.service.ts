@@ -9,7 +9,7 @@ import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
   CreateOrderRequestedEvent,
   OrderCancelRequestedEvent,
-} from '@contracts/events';
+} from '@contracts/order-events';
 
 import { makeHttpRequest } from '../../common/http';
 import { CreateOrderDto } from './dto/create-order.dto';

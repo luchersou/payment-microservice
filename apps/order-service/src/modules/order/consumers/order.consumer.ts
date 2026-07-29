@@ -5,6 +5,7 @@ import { ConsumeMessage } from 'amqplib';
 
 import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
+import { MetricNames } from '@common/metrics';
 import {
   Exchanges,
   ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS,
@@ -16,11 +17,13 @@ import {
 import {
   CreateOrderRequestedEvent,
   OrderCancelRequestedEvent,
+} from '@contracts/order-events';
+import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
-} from '@contracts/events';
-import { EventTypes, MetricNames } from '@contracts/types';
+} from '@contracts/payment-events';
+import { PaymentEventTypes } from '@contracts/payment-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderService } from '../services/order.service';
@@ -137,15 +140,15 @@ export class OrderConsumer {
 
       try {
         switch (event.eventType) {
-          case EventTypes.PAYMENT_APPROVED:
+          case PaymentEventTypes.PAYMENT_APPROVED:
             await this.orderService.completeOrder(orderId);
             break;
 
-          case EventTypes.PAYMENT_DECLINED:
+          case PaymentEventTypes.PAYMENT_DECLINED:
             await this.orderService.cancelByPaymentDeclined(orderId);
             break;
 
-          case EventTypes.PAYMENT_FAILED:
+          case PaymentEventTypes.PAYMENT_FAILED:
             await this.orderService.failOrder(orderId);
             break;
 
