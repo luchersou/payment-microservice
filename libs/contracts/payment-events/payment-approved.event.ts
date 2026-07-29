@@ -1,12 +1,14 @@
-import { EventTypes } from '@contracts/types';
-
-import { BaseEvent } from '@libs/common/events';
+import { BaseEvent } from '@common/events';
+import { PaymentEventTypes } from './payment-event-types';
 
 export interface PaymentApprovedPayload {
   orderId: string;
   transactionId: string;
 }
 
-export class PaymentApprovedEvent extends BaseEvent<PaymentApprovedPayload> {
-  readonly eventType = EventTypes.PAYMENT_APPROVED;
+export class PaymentApprovedEvent extends BaseEvent<
+  PaymentApprovedPayload,
+  PaymentEventTypes
+> {
+  readonly eventType = PaymentEventTypes.PAYMENT_APPROVED;
 }
