@@ -18,7 +18,7 @@ import {
   OrderCreatedEvent,
   CancelReason,
 } from '@contracts/order-events';
-import { MetricNames } from '@contracts/types';
+import { MetricNames } from '@common/metrics';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderResponseDto } from '../dto/order-response.dto';

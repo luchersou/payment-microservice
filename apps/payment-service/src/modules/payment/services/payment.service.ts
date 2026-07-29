@@ -17,7 +17,7 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/payment-events';
-import { MetricNames } from '@contracts/types';
+import { MetricNames } from '@common/metrics';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';

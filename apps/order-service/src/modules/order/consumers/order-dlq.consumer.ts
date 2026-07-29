@@ -15,7 +15,7 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/payment-events';
-import { MetricNames } from '@contracts/types';
+import { MetricNames } from '@common/metrics';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderService } from '../services/order.service';
