@@ -1,0 +1,12 @@
+import { EventTypes } from '@contracts/types';
+
+import { BaseEvent } from '@libs/common/events';
+
+export interface PaymentDeclinedPayload {
+  orderId: string;
+  reason: string;
+}
+
+export class PaymentDeclinedEvent extends BaseEvent<PaymentDeclinedPayload> {
+  readonly eventType = EventTypes.PAYMENT_DECLINED;
+}

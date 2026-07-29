@@ -1,4 +1,4 @@
-import { BaseEvent } from '@contracts/events';
+import { BaseEvent } from '@libs/common/events';
 import { EventTypes } from '@contracts/types';
 
 export interface CreateOrderRequestedPayload {
