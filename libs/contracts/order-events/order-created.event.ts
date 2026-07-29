@@ -1,6 +1,5 @@
-import { EventTypes } from '@contracts/types';
-
-import { BaseEvent } from '@libs/common/events';
+import { BaseEvent } from '@common/events';
+import { OrderEventTypes } from './order-event-types';
 
 export interface OrderCreatedPayload {
   orderId: string;
@@ -8,6 +7,9 @@ export interface OrderCreatedPayload {
   total: number;
 }
 
-export class OrderCreatedEvent extends BaseEvent<OrderCreatedPayload> {
-  readonly eventType = EventTypes.ORDER_CREATED;
+export class OrderCreatedEvent extends BaseEvent<
+  OrderCreatedPayload,
+  OrderEventTypes
+> {
+  readonly eventType = OrderEventTypes.ORDER_CREATED;
 }

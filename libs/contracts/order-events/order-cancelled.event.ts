@@ -1,7 +1,6 @@
-import { CancelReason } from '@contracts/types';
-import { EventTypes } from '@contracts/types';
-
-import { BaseEvent } from '@libs/common/events';
+import { BaseEvent } from '@common/events';
+import { CancelReason } from './cancel-reason';
+import { OrderEventTypes } from './order-event-types';
 
 export interface OrderCancelledPayload {
   orderId: string;
@@ -9,6 +8,9 @@ export interface OrderCancelledPayload {
   cancelledAt: Date;
 }
 
-export class OrderCancelledEvent extends BaseEvent<OrderCancelledPayload> {
-  readonly eventType = EventTypes.ORDER_CANCELLED;
+export class OrderCancelledEvent extends BaseEvent<
+  OrderCancelledPayload,
+  OrderEventTypes
+> {
+  readonly eventType = OrderEventTypes.ORDER_CANCELLED;
 }
