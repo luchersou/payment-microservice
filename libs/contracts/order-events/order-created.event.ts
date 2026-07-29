@@ -1,4 +1,5 @@
 import { BaseEvent } from '@common/events';
+
 import { OrderEventTypes } from './order-event-types';
 
 export interface OrderCreatedPayload {

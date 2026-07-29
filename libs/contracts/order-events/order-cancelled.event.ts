@@ -1,4 +1,5 @@
 import { BaseEvent } from '@common/events';
+
 import { CancelReason } from './cancel-reason';
 import { OrderEventTypes } from './order-event-types';
 

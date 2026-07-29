@@ -1,4 +1,5 @@
 import { BaseEvent } from '@common/events';
+
 import { PaymentEventTypes } from './payment-event-types';
 
 export interface PaymentFailedPayload {

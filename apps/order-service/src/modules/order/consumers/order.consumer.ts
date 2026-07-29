@@ -5,6 +5,7 @@ import { ConsumeMessage } from 'amqplib';
 
 import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
+import { MetricNames } from '@common/metrics';
 import {
   Exchanges,
   ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS,
@@ -23,7 +24,6 @@ import {
   PaymentFailedEvent,
 } from '@contracts/payment-events';
 import { PaymentEventTypes } from '@contracts/payment-events';
-import { MetricNames } from '@common/metrics';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderService } from '../services/order.service';

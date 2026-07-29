@@ -5,6 +5,7 @@ import { ConsumeMessage } from 'amqplib';
 
 import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
+import { MetricNames } from '@common/metrics';
 import { DLQ, Exchanges } from '@messaging/rabbitmq';
 import {
   CreateOrderRequestedEvent,
@@ -15,7 +16,6 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/payment-events';
-import { MetricNames } from '@common/metrics';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
 import { OrderService } from '../services/order.service';

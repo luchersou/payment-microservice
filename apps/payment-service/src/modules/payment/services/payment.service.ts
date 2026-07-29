@@ -7,6 +7,7 @@ import { PrismaService } from '@payment/prisma/prisma.service';
 
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
+import { MetricNames } from '@common/metrics';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
   OrderCancelledPayload,
@@ -17,7 +18,6 @@ import {
   PaymentDeclinedEvent,
   PaymentFailedEvent,
 } from '@contracts/payment-events';
-import { MetricNames } from '@common/metrics';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
