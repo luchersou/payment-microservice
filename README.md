@@ -58,26 +58,12 @@ payment-microservices/
 │   │   └── src/
 │   │       ├── common/
 │   │       │   ├── http/
-│   │       │   │   ├── http-client.helper.ts
-│   │       │   │   ├── http-client.provider.ts
-│   │       │   │   └── http.module.ts
 │   │       │   └── middleware/
-│   │       │       └── correlation-id.middleware.ts
 │   │       ├── modules/
 │   │       │   ├── metrics/
-│   │       │   │   ├── http-metrics.interceptor.ts
-│   │       │   │   ├── metrics.controller.ts
-│   │       │   │   ├── metrics.service.ts
-│   │       │   │   └── metrics.module.ts
 │   │       │   ├── orders/
-│   │       │   │   ├── dto/
-│   │       │   │   ├── orders.controller.ts
-│   │       │   │   ├── orders.service.ts
-│   │       │   │   └── orders.module.ts
+│   │       │   │   └── dto/
 │   │       │   └── payments/
-│   │       │       ├── payments.controller.ts
-│   │       │       ├── payments.service.ts
-│   │       │       └── payments.module.ts
 │   │       ├── app.module.ts
 │   │       └── main.ts
 │   │
@@ -86,18 +72,11 @@ payment-microservices/
 │   │   └── src/
 │   │       ├── modules/
 │   │       │   ├── metrics/
-│   │       │   │   ├── metrics.service.ts
-│   │       │   │   └── metrics.module.ts
 │   │       │   └── order/
 │   │       │       ├── consumers/
-│   │       │       │   ├── order-dlq.consumer.ts
-│   │       │       │   └── order.consumer.ts
 │   │       │       ├── controllers/
-│   │       │       │   └── order.controller.ts
 │   │       │       ├── services/
-│   │       │       │   └── order.service.ts
-│   │       │       ├── dto/
-│   │       │       └── order.module.ts
+│   │       │       └── dto/
 │   │       ├── app.module.ts
 │   │       ├── main.ts
 │   │       └── rabbitmq.config.ts
@@ -106,50 +85,31 @@ payment-microservices/
 │       ├── prisma/
 │       └── src/
 │           ├── modules/
-│   │       │   ├── metrics/
-│   │       │   │   ├── metrics.service.ts
-│   │       │   │   └── metrics.module.ts
+│           │   ├── metrics/
 │           │   └── payment/
 │           │       ├── consumers/
-│           │       │   ├── payment-dlq.consumer.ts
-│           │       │   └── payment.consumer.ts
 │           │       ├── controllers/
-│           │       │   └── payment.controller.ts
 │           │       ├── services/
-│           │       │   └── payment.service.ts
-│           │       ├── dto/
-│           │       └── payment.module.ts
+│           │       └── dto/
 │           ├── app.module.ts
 │           ├── main.ts
 │           └── rabbitmq.config.ts
 │
 ├── libs/
-│   ├── contracts/                   # Shared contracts
-│   │   ├── events/                  # Event definitions
-│   │   │   ├── base.event.ts
-│   │   │   ├── create-order-requested.event.ts
-│   │   │   ├── order-cancel-requested.event.ts
-│   │   │   ├── order-created.event.ts
-│   │   │   ├── order-cancelled.event.ts
-│   │   │   ├── payment-approved.event.ts
-│   │   │   ├── payment-declined.event.ts
-│   │   │   └── payment-failed.event.ts
-│   │   └── types/
-│   │       ├── event-types.enum.ts
-│   │       └── cancel-reason.enum.ts
+│   ├── contracts/                   # Shared contracts, split by domain
+│   │   ├── order-events/            # Order domain events, types, and cancel reasons
+│   │   └── payment-events/          # Payment domain events and types
 │   │
 │   ├── messaging/                   # Shared RabbitMQ module
 │   │   └── rabbitmq/
 │   │       ├── config/
-│   │       ├── constants/
-│   │       └── rabbitmq.module.ts
+│   │       └── constants/
 │   │
 │   └── common/                      # Shared utilities
 │       ├── context/
-│       │   ├── correlation-id.context.ts
-│       │   └── correlation-id.service.ts
-│       └── messaging/
-│           └── run-with-correlation.ts
+│       ├── events/                  # Generic BaseEvent
+│       ├── messaging/
+│       └── metrics/                 # Cross-cutting MetricNames
 │
 ├── monitoring/                      # Observability stack (Prometheus + Grafana)
 │   ├── grafana/
@@ -347,7 +307,6 @@ curl -X POST http://localhost:3000/api/orders \
 **Response:**
 ```json
 {
-    "orderId": "11c4a663-47fd-4590-9c2d-ee72cc58bbbd",
     "message": "Order creation request accepted",
     "status": "PENDING_PAYMENT"
 }
