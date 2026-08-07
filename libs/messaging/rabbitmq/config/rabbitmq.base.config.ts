@@ -2,7 +2,7 @@ import { RabbitMQConfig } from '@golevelup/nestjs-rabbitmq';
 
 import { Exchanges } from '../constants';
 
-export const rabbitmqBaseConfig: Partial<RabbitMQConfig> = {
+export const rabbitmqBaseConfig: RabbitMQConfig = {
   uri: process.env.RABBITMQ_URL || 'amqp://localhost:5672',
 
   connectionInitOptions: { wait: false },
