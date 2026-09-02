@@ -44,7 +44,7 @@ export class OrdersService {
 
     await this.AmqpConnection.publish(
       Exchanges.ORDERS,
-      RoutingKeys.CREATE_ORDER_REQUESTED,
+      RoutingKeys.ORDER_CREATE_REQUESTED,
       event,
       {
         correlationId,

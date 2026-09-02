@@ -11,5 +11,5 @@ export class CreateOrderRequestedEvent extends BaseEvent<
   CreateOrderRequestedPayload,
   OrderEventTypes
 > {
-  readonly eventType = OrderEventTypes.CREATE_ORDER_REQUESTED;
+  readonly eventType = OrderEventTypes.ORDER_CREATE_REQUESTED;
 }
