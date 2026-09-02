@@ -1,5 +1,5 @@
 export const RoutingKeys = {
-  CREATE_ORDER_REQUESTED: 'order.create.requested',
+  ORDER_CREATE_REQUESTED: 'order.create.requested',
   ORDER_CREATED: 'order.created',
   ORDER_CANCELLED: 'order.cancelled',
   ORDER_CANCEL_REQUESTED: 'order.cancel.requested',

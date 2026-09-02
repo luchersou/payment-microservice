@@ -1,5 +1,5 @@
 export enum OrderEventTypes {
-  CREATE_ORDER_REQUESTED = 'CreateOrderRequested',
+  ORDER_CREATE_REQUESTED = 'OrderCreateRequested',
   ORDER_CREATED = 'OrderCreated',
   ORDER_CANCELLED = 'OrderCancelled',
   ORDER_CANCEL_REQUESTED = 'OrderCancelRequested',

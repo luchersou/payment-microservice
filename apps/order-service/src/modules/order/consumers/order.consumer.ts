@@ -48,7 +48,7 @@ export class OrderConsumer {
 
   @RabbitSubscribe({
     exchange: Exchanges.ORDERS,
-    routingKey: RoutingKeys.CREATE_ORDER_REQUESTED,
+    routingKey: RoutingKeys.ORDER_CREATE_REQUESTED,
     queue: Queues.ORDER_CREATE,
     queueOptions: ORDER_CREATE_QUEUE_OPTIONS,
   })
