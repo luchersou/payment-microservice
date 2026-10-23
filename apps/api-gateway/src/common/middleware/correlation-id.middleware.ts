@@ -15,7 +15,7 @@ export function correlationIdMiddleware(
       ? incomingCorrelationId
       : randomUUID();
 
-  (req as any).correlationId = correlationId;
+  (req as Request & { correlationId?: string }).correlationId = correlationId;
 
   res.setHeader('x-correlation-id', correlationId);
 

@@ -1,6 +1,8 @@
 import { HttpService } from '@nestjs/axios';
 import { Logger } from '@nestjs/common';
 
+import { AxiosError } from 'axios';
+
 import { CorrelationIdService } from '@common/context';
 
 export function setupAxiosInterceptors(httpService: HttpService) {
@@ -19,7 +21,7 @@ export function setupAxiosInterceptors(httpService: HttpService) {
 
   axios.interceptors.response.use(
     (response) => response,
-    (error) => {
+    (error: AxiosError) => {
       const correlationId = CorrelationIdService.getId();
 
       Logger.error(

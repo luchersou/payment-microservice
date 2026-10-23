@@ -88,7 +88,7 @@ export class OrdersService {
 
   async findAll(page: number, limit: number) {
     return makeHttpRequest(
-      this.http.get(`${this.orderServiceUrl}/orders`, {
+      this.http.get<unknown>(`${this.orderServiceUrl}/orders`, {
         params: { page, limit },
       }),
       this.requestTimeout,
@@ -97,7 +97,7 @@ export class OrdersService {
 
   async findOne(id: string) {
     return makeHttpRequest(
-      this.http.get(`${this.orderServiceUrl}/orders/${id}`),
+      this.http.get<unknown>(`${this.orderServiceUrl}/orders/${id}`),
       this.requestTimeout,
       `Order ${id} not found`,
     );
