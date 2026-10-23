@@ -5,7 +5,6 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { register, Registry } from 'prom-client';
 
 import { HttpMetricsInterceptor } from './http-metrics.interceptor';
-import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 
 @Module({
@@ -16,7 +15,6 @@ import { MetricsService } from './metrics.service';
       },
     }),
   ],
-  controllers: [MetricsController],
   providers: [
     {
       provide: Registry,

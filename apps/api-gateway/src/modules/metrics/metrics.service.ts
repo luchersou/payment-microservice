@@ -26,7 +26,7 @@ export class MetricsService {
       new Histogram({
         name: 'http_request_duration_seconds',
         help: 'Duration of HTTP requests in seconds',
-        labelNames: ['method', 'route'],
+        labelNames: ['method', 'route', 'status_code'],
         buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
         registers: [this.registry],
       });
@@ -53,8 +53,8 @@ export class MetricsService {
       route: labels.route,
     });
 
-    return () => {
-      end();
+    return ({ status_code }) => {
+      end({ status_code: status_code.toString() });
     };
   }
 }
