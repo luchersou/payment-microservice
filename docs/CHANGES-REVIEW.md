@@ -90,3 +90,25 @@ divergia da descrição da tarefa, ou quando havia mais de uma opção razoável
   semântica (o pedido fica `FAILED`); o dashboard não foi alterado.
 - Teste novo `order.consumer.spec.ts` cobre o roteamento dos três resultados
   de pagamento, já que a mudança está no consumidor.
+
+#### Smoke test da Fase 1 (docker compose, antes do push)
+
+Não substitui a validação final, que roda na branch da Fase 4.
+
+- Caminho feliz: pedidos `PAID` / pagamentos `APPROVED`.
+- Decline: pedido `FAILED`, pagamento `DECLINED` com
+  `failureReason = "Insufficient funds"`, e nenhum `order.cancelled` recebido
+  pelo payment-service para esse pedido.
+- Cancelar depois de pago: pedido `CANCELLED`, pagamento `REFUNDED`.
+- Persistência: com o payment-service parado, as mensagens em
+  `payment.order-created.queue` e `payment.order-cancelled.queue` estavam com
+  `delivery_mode = 2`.
+- Cancelar com o payment-service parado e subir depois de 35s: pagamento
+  `CANCELLED`. Nessa execução o `order.created` foi consumido antes, então
+  quem resolveu foi a transição condicional `PROCESSING → CANCELLED`.
+- Tombstone forçada (publicando `order.cancelled` antes de `order.created`
+  direto na exchange): pagamento `CANCELLED` com `amount = null`, e o
+  `order.created` seguinte logou "not charging".
+- Tombstone de pedido forçada (`order.cancel.requested` antes de
+  `order.create.requested`): pedido `CANCELLED` com `userId`/`total` nulos, e
+  nenhum `order.created` publicado.
