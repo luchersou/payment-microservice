@@ -32,6 +32,11 @@
 
     "lib": ["ES2021"],
 
+    // Explicit since TypeScript 6 no longer loads every @types package by
+    // default. Build configs override this with ["node"] only, so Jest
+    // globals are available to specs but not to production code.
+    "types": ["node", "jest"],
+
     "declaration": true,
     "removeComments": true,
   }
