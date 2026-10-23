@@ -167,7 +167,9 @@ export class OrderConsumer {
             break;
 
           default:
-            this.logger.error(`❌ Unknown payment event: ${event}`);
+            this.logger.error(
+              `❌ Unknown payment event: ${String((event as { eventType?: unknown }).eventType)}`,
+            );
             return;
         }
       } catch (error) {

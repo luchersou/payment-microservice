@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 
 type Store = {
-  correlationId: string;
+  correlationId: string | undefined;
 };
 
 export const correlationIdStorage = new AsyncLocalStorage<Store>();

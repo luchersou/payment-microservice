@@ -6,7 +6,7 @@ export function runWithCorrelation(
   amqpMsg: ConsumeMessage,
   callback: () => Promise<void> | void,
 ) {
-  const correlationId = amqpMsg.properties.correlationId;
+  const correlationId = amqpMsg.properties.correlationId as string | undefined;
 
   return correlationIdStorage.run({ correlationId }, callback);
 }

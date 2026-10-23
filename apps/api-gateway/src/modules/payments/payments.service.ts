@@ -25,7 +25,7 @@ export class PaymentsService {
 
   async findAll(page: number, limit: number) {
     return makeHttpRequest(
-      this.http.get(`${this.baseUrl}/payments`, {
+      this.http.get<unknown>(`${this.baseUrl}/payments`, {
         params: { page, limit },
       }),
       this.requestTimeout,
@@ -34,14 +34,14 @@ export class PaymentsService {
 
   async getPaymentStats() {
     return makeHttpRequest(
-      this.http.get(`${this.baseUrl}/payments/stats`),
+      this.http.get<unknown>(`${this.baseUrl}/payments/stats`),
       this.requestTimeout,
     );
   }
 
   async findOne(id: string) {
     return makeHttpRequest(
-      this.http.get(`${this.baseUrl}/payments/${id}`),
+      this.http.get<unknown>(`${this.baseUrl}/payments/${id}`),
       this.requestTimeout,
       `Payment ${id} not found`,
     );
@@ -49,7 +49,7 @@ export class PaymentsService {
 
   async findByOrderId(orderId: string) {
     return makeHttpRequest(
-      this.http.get(`${this.baseUrl}/payments/order/${orderId}`),
+      this.http.get<unknown>(`${this.baseUrl}/payments/order/${orderId}`),
       this.requestTimeout,
       `Payment for order ${orderId} not found`,
     );
