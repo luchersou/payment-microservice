@@ -68,7 +68,7 @@ export class OrderConsumer {
       );
 
       const endTimer = this.metrics.startMessageProcessingTimer(
-        MetricNames.ORDER_CREATED_PROCESSING_DURATION,
+        MetricNames.ORDER_CREATE_REQUESTED_PROCESSING_DURATION,
       );
 
       try {
@@ -108,7 +108,7 @@ export class OrderConsumer {
       );
 
       const endTimer = this.metrics.startMessageProcessingTimer(
-        MetricNames.ORDER_CANCELLED_PROCESSING_DURATION,
+        MetricNames.ORDER_CANCEL_REQUESTED_PROCESSING_DURATION,
       );
 
       try {

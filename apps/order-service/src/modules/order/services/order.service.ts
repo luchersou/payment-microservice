@@ -8,7 +8,6 @@ import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
-import { MetricNames } from '@common/metrics';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
   CancelReason,
@@ -95,79 +94,61 @@ export class OrderService {
    * publish. The payment service is idempotent on orderId.
    */
   async createOrder(payload: CreateOrderRequestedPayload) {
-    const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricNames.CREATE_ORDER_REQUEST_DURATION,
+    // Fallback for requests published before the gateway sent orderId
+    const orderId = payload.orderId ?? randomUUID();
+    const { order, created } = await this.findOrCreateOrder(orderId, payload);
+
+    if (created) {
+      this.logger.log(`✅ Order ${order.id} persisted`);
+      this.metrics.incrementOrdersCreated();
+    } else {
+      this.logger.warn(`⚠️ Order ${order.id} already exists (redelivery)`);
+    }
+
+    if (order.status !== OrderStatus.PENDING_PAYMENT) {
+      this.logger.log(
+        `ℹ️ Order ${order.id} is ${order.status}, OrderCreated not republished`,
+      );
+      return order;
+    }
+
+    const correlationId = CorrelationIdService.getId();
+
+    await this.amqpConnection.publish(
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CREATED,
+      new OrderCreatedEvent(
+        { orderId: order.id, userId: order.userId, total: order.total },
+        correlationId,
+      ),
+      { correlationId },
     );
 
-    try {
-      // Fallback for requests published before the gateway sent orderId
-      const orderId = payload.orderId ?? randomUUID();
-      const { order, created } = await this.findOrCreateOrder(orderId, payload);
-
-      if (created) {
-        this.logger.log(`✅ Order ${order.id} persisted`);
-        this.metrics.incrementOrdersCreated();
-      } else {
-        this.logger.warn(`⚠️ Order ${order.id} already exists (redelivery)`);
-      }
-
-      if (order.status !== OrderStatus.PENDING_PAYMENT) {
-        this.logger.log(
-          `ℹ️ Order ${order.id} is ${order.status}, OrderCreated not republished`,
-        );
-        return order;
-      }
-
-      const correlationId = CorrelationIdService.getId();
-
-      await this.amqpConnection.publish(
-        Exchanges.ORDERS,
-        RoutingKeys.ORDER_CREATED,
-        new OrderCreatedEvent(
-          { orderId: order.id, userId: order.userId, total: order.total },
-          correlationId,
-        ),
-        { correlationId },
-      );
-
-      return order;
-    } finally {
-      endTimer();
-    }
+    return order;
   }
 
   async completeOrder(orderId: string) {
-    const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
-    );
-    try {
-      const { order, changed } = await this.transition(
-        orderId,
-        OrderStatus.PAID,
+    const { order, changed } = await this.transition(orderId, OrderStatus.PAID);
+
+    if (!order) {
+      this.logger.warn(
+        `⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`,
       );
-
-      if (!order) {
-        this.logger.warn(
-          `⚠️ Order ${orderId} not found. Ignoring PaymentApproved event.`,
-        );
-        return;
-      }
-
-      if (changed) {
-        this.logger.log(`✅ Order ${orderId} marked as PAID`);
-        this.metrics.incrementOrdersCompleted();
-      } else if (order.status === OrderStatus.PAID) {
-        this.logger.log(`✅ Order ${orderId} already paid. Skipping.`);
-      } else {
-        this.logger.warn(
-          `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
-        );
-      }
-
-      return order;
-    } finally {
-      endTimer();
+      return;
     }
+
+    if (changed) {
+      this.logger.log(`✅ Order ${orderId} marked as PAID`);
+      this.metrics.incrementOrdersCompleted();
+    } else if (order.status === OrderStatus.PAID) {
+      this.logger.log(`✅ Order ${orderId} already paid. Skipping.`);
+    } else {
+      this.logger.warn(
+        `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
+      );
+    }
+
+    return order;
   }
 
   async cancelByUser(orderId: string) {
@@ -179,35 +160,28 @@ export class OrderService {
   }
 
   async failOrder(orderId: string) {
-    const endTimer = this.metrics.startMessageProcessingTimer(
-      MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
+    const { order, changed } = await this.transition(
+      orderId,
+      OrderStatus.FAILED,
     );
-    try {
-      const { order, changed } = await this.transition(
-        orderId,
-        OrderStatus.FAILED,
+
+    if (!order) {
+      this.logger.warn(
+        `⚠️ Order ${orderId} not found. Ignoring PaymentFailed.`,
       );
-
-      if (!order) {
-        this.logger.warn(
-          `⚠️ Order ${orderId} not found. Ignoring PaymentFailed.`,
-        );
-        return;
-      }
-
-      if (changed) {
-        this.logger.warn(`⚠️ Order ${orderId} marked as FAILED`);
-        this.metrics.incrementOrdersFailed();
-      } else if (order.status !== OrderStatus.FAILED) {
-        this.logger.warn(
-          `⚠️ Cannot fail order ${orderId} with status ${order.status}`,
-        );
-      }
-
-      return order;
-    } finally {
-      endTimer();
+      return;
     }
+
+    if (changed) {
+      this.logger.warn(`⚠️ Order ${orderId} marked as FAILED`);
+      this.metrics.incrementOrdersFailed();
+    } else if (order.status !== OrderStatus.FAILED) {
+      this.logger.warn(
+        `⚠️ Cannot fail order ${orderId} with status ${order.status}`,
+      );
+    }
+
+    return order;
   }
 
   async saveFailedMessage(data: {
@@ -243,67 +217,55 @@ export class OrderService {
   // ─────────────────────────────────────────────
 
   private async cancelOrderInternal(orderId: string, reason: CancelReason) {
-    const metric =
+    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
+
+    const target =
       reason === CancelReason.PAYMENT_DECLINED
-        ? MetricNames.PAYMENT_DECLINE_DURATION
-        : MetricNames.ORDER_CANCEL_REQUEST_DURATION;
+        ? OrderStatus.FAILED
+        : OrderStatus.CANCELLED;
 
-    const endTimer = this.metrics.startMessageProcessingTimer(metric);
-    try {
-      this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
+    const { order, changed } = await this.transition(orderId, target);
 
-      const target =
-        reason === CancelReason.PAYMENT_DECLINED
-          ? OrderStatus.FAILED
-          : OrderStatus.CANCELLED;
-
-      const { order, changed } = await this.transition(orderId, target);
-
-      if (!order) {
-        if (reason === CancelReason.USER_REQUESTED) {
-          throw new OrderNotFoundYetError(orderId);
-        }
-        this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-        return;
+    if (!order) {
+      if (reason === CancelReason.USER_REQUESTED) {
+        throw new OrderNotFoundYetError(orderId);
       }
-
-      if (!changed && order.status !== target) {
-        this.logger.warn(
-          `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
-        );
-        return;
-      }
-
-      // Published when the transition happened now, and republished when the
-      // order is already in the target status (redelivery after a failed
-      // publish). The payment service handles OrderCancelled idempotently.
-      const correlationId = CorrelationIdService.getId();
-
-      await this.amqpConnection.publish(
-        Exchanges.ORDERS,
-        RoutingKeys.ORDER_CANCELLED,
-        new OrderCancelledEvent(
-          { orderId: order.id, reason, cancelledAt: order.updatedAt },
-          correlationId,
-        ),
-        { correlationId },
-      );
-
-      if (changed) {
-        this.logger.log(
-          `✅ Order ${orderId} updated to ${target} successfully`,
-        );
-        this.metrics.incrementOrdersCancelled(reason);
-      } else {
-        this.logger.warn(
-          `⚠️ Order ${orderId} already ${target}. OrderCancelled republished.`,
-        );
-      }
-
-      return order;
-    } finally {
-      endTimer();
+      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
+      return;
     }
+
+    if (!changed && order.status !== target) {
+      this.logger.warn(
+        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
+      );
+      return;
+    }
+
+    // Published when the transition happened now, and republished when the
+    // order is already in the target status (redelivery after a failed
+    // publish). The payment service handles OrderCancelled idempotently.
+    const correlationId = CorrelationIdService.getId();
+
+    await this.amqpConnection.publish(
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CANCELLED,
+      new OrderCancelledEvent(
+        { orderId: order.id, reason, cancelledAt: order.updatedAt },
+        correlationId,
+      ),
+      { correlationId },
+    );
+
+    if (changed) {
+      this.logger.log(`✅ Order ${orderId} updated to ${target} successfully`);
+      this.metrics.incrementOrdersCancelled(reason);
+    } else {
+      this.logger.warn(
+        `⚠️ Order ${orderId} already ${target}. OrderCancelled republished.`,
+      );
+    }
+
+    return order;
   }
 
   // ─────────────────────────────────────────────

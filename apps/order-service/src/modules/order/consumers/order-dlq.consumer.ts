@@ -63,7 +63,7 @@ export class OrderDlqConsumer {
 
       try {
         this.metrics.incrementDlqMessages(
-          MetricNames.ORDER_CREATE_DLQ_COUNT,
+          DLQ.ORDER_CREATE,
           amqpMsg.fields.routingKey,
         );
 
@@ -110,7 +110,7 @@ export class OrderDlqConsumer {
 
       try {
         this.metrics.incrementDlqMessages(
-          MetricNames.ORDER_CANCEL_REQUESTED_DLQ_COUNT,
+          DLQ.ORDER_CANCEL_REQUESTED,
           amqpMsg.fields.routingKey,
         );
 
@@ -152,7 +152,7 @@ export class OrderDlqConsumer {
 
       try {
         this.metrics.incrementDlqMessages(
-          MetricNames.ORDER_PAYMENT_RESULT_DLQ_COUNT,
+          DLQ.ORDER_PAYMENT_RESULT,
           amqpMsg.fields.routingKey,
         );
 
