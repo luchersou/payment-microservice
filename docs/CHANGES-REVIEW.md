@@ -58,3 +58,19 @@ divergia da descrição da tarefa, ou quando havia mais de uma opção razoável
   registro, porque os campos agora são anuláveis no tipo. Só a tombstone tem
   nulos, e ela nunca chega a publicar `order.created`.
 - Os DTOs de resposta (`amount`, `userId`, `total`) passaram a ser anuláveis.
+
+#### 3. Persistir o motivo de decline/fail
+
+- `failureReason` é gravado no mesmo `updateMany` condicional que faz a
+  transição (o `transition` ganhou um parâmetro `data`), então status e motivo
+  nunca ficam dessincronizados.
+- `publishDeclined`/`publishFailed` passaram a receber só o `Payment` e a ler o
+  motivo dele. No caminho normal, o objeto em memória recebe o motivo
+  (`{ ...payment, failureReason }`) para não precisar reler o registro.
+- Os textos `Insufficient funds` / `Unknown error` continuam como fallback,
+  só para pagamentos decididos antes da coluna existir.
+- `failureReason` também foi exposto no `PaymentResponseDto`, para que o
+  cenário de validação "pagamento DECLINED com failureReason" seja
+  verificável pela API.
+- O `prisma format` realinhou as colunas do schema; o diff sem espaços é só a
+  coluna nova.

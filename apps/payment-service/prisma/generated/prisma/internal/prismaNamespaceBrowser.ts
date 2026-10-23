@@ -75,6 +75,7 @@ export const PaymentScalarFieldEnum = {
   orderId: 'orderId',
   amount: 'amount',
   status: 'status',
+  failureReason: 'failureReason',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

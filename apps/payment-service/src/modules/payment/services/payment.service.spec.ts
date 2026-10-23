@@ -19,6 +19,7 @@ type FakePayment = {
   orderId: string;
   amount?: number | null;
   status: PaymentStatus;
+  failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -65,7 +66,7 @@ function makeFakePrisma() {
         data,
       }: {
         where: { id: string; status: PaymentStatus };
-        data: { status: PaymentStatus };
+        data: { status: PaymentStatus; failureReason?: string };
       }) => {
         const current = payments.get(where.id);
         if (!current || current.status !== where.status) {
@@ -77,12 +78,17 @@ function makeFakePrisma() {
     ),
   };
 
-  const seed = (orderId: string, status: PaymentStatus) => {
+  const seed = (
+    orderId: string,
+    status: PaymentStatus,
+    extra: Partial<FakePayment> = {},
+  ) => {
     const p = {
       id: `pay-${++seq}`,
       orderId,
       amount: 100,
       status,
+      ...extra,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -130,6 +136,9 @@ describe('PaymentService', () => {
   const publishedRoutingKeys = () =>
     amqp.publish.mock.calls.map((call: unknown[]) => call[1]);
 
+  const publishedPayload = () =>
+    (amqp.publish.mock.calls[0][2] as { payload: unknown }).payload;
+
   describe('handleOrderCreated', () => {
     it('approves and publishes PaymentApproved', async () => {
       await service.handleOrderCreated(orderCreated);
@@ -154,7 +163,12 @@ describe('PaymentService', () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.DECLINED);
+      expect(fake.byOrder('order-1')?.failureReason).toBe('No funds');
       expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_DECLINED]);
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        reason: 'No funds',
+      });
     });
 
     it('marks FAILED only on gateway errors', async () => {
@@ -163,7 +177,40 @@ describe('PaymentService', () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.FAILED);
+      expect(fake.byOrder('order-1')?.failureReason).toBe('gateway timeout');
       expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_FAILED]);
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        error: 'gateway timeout',
+      });
+    });
+
+    it('republishes a DECLINED result with the persisted reason', async () => {
+      fake.seed('order-1', PaymentStatus.DECLINED, {
+        failureReason: 'Card expired',
+      });
+
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway).not.toHaveBeenCalled();
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        reason: 'Card expired',
+      });
+    });
+
+    it('republishes a FAILED result with the persisted reason', async () => {
+      fake.seed('order-1', PaymentStatus.FAILED, {
+        failureReason: 'gateway timeout',
+      });
+
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway).not.toHaveBeenCalled();
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        error: 'gateway timeout',
+      });
     });
 
     it('keeps APPROVED and rethrows when publishing the result fails', async () => {

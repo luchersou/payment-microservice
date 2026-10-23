@@ -26,6 +26,7 @@ import { PaymentResponseDto } from '../dto/payment-response.dto';
 import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
 
 const DEFAULT_DECLINE_REASON = 'Insufficient funds';
+const UNKNOWN_FAILURE_REASON = 'Unknown error';
 
 /** The payment changed between read and conditional write; retry re-reads it */
 export class ConcurrentPaymentUpdateError extends Error {
@@ -347,9 +348,14 @@ export class PaymentService {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.PAYMENT_DECLINE_DURATION,
     );
+    const failureReason = reason ?? DEFAULT_DECLINE_REASON;
 
     try {
-      if (!(await this.transition(payment, PaymentStatus.DECLINED))) {
+      if (
+        !(await this.transition(payment, PaymentStatus.DECLINED, {
+          failureReason,
+        }))
+      ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing, not declining`,
         );
@@ -359,7 +365,7 @@ export class PaymentService {
       this.metrics.incrementPaymentsDeclined(reason ?? 'insufficient_funds');
       this.logger.warn(`⚠️ Payment declined for order ${payment.orderId}`);
 
-      await this.publishDeclined(payment, reason);
+      await this.publishDeclined({ ...payment, failureReason });
     } finally {
       endTimer();
     }
@@ -369,9 +375,15 @@ export class PaymentService {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.PAYMENT_FAILURE_DURATION,
     );
+    const failureReason =
+      error instanceof Error ? error.message : UNKNOWN_FAILURE_REASON;
 
     try {
-      if (!(await this.transition(payment, PaymentStatus.FAILED))) {
+      if (
+        !(await this.transition(payment, PaymentStatus.FAILED, {
+          failureReason,
+        }))
+      ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing, not failing`,
         );
@@ -381,10 +393,7 @@ export class PaymentService {
       this.metrics.incrementPaymentsFailed();
       this.logger.error(`❌ Payment failed for order ${payment.orderId}`);
 
-      await this.publishFailed(
-        payment,
-        error instanceof Error ? error.message : undefined,
-      );
+      await this.publishFailed({ ...payment, failureReason });
     } finally {
       endTimer();
     }
@@ -422,7 +431,11 @@ export class PaymentService {
     );
   }
 
-  private async publishDeclined(payment: Payment, reason?: string) {
+  // The reason is read from the record so a republished result (redelivery)
+  // carries the original one. The fallbacks only cover payments decided
+  // before failureReason was persisted.
+
+  private async publishDeclined(payment: Payment) {
     const correlationId = CorrelationIdService.getId();
 
     await publishEvent(
@@ -432,14 +445,14 @@ export class PaymentService {
       new PaymentDeclinedEvent(
         {
           orderId: payment.orderId,
-          reason: reason ?? DEFAULT_DECLINE_REASON,
+          reason: payment.failureReason ?? DEFAULT_DECLINE_REASON,
         },
         correlationId,
       ),
     );
   }
 
-  private async publishFailed(payment: Payment, error?: string) {
+  private async publishFailed(payment: Payment) {
     const correlationId = CorrelationIdService.getId();
 
     await publishEvent(
@@ -447,7 +460,10 @@ export class PaymentService {
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_FAILED,
       new PaymentFailedEvent(
-        { orderId: payment.orderId, error: error ?? 'Unknown error' },
+        {
+          orderId: payment.orderId,
+          error: payment.failureReason ?? UNKNOWN_FAILURE_REASON,
+        },
         correlationId,
       ),
     );
@@ -460,11 +476,14 @@ export class PaymentService {
   /**
    * Atomic conditional update: succeeds only if the payment is still in the
    * status it was read with, so a concurrent cancel and approval cannot both
-   * win. Returns whether this call performed the transition.
+   * win. `data` is written in the same update (e.g. failureReason), so it is
+   * never out of sync with the status. Returns whether this call performed
+   * the transition.
    */
   private async transition(
     payment: Payment,
     to: PaymentStatus,
+    data: Pick<Partial<Payment>, 'failureReason'> = {},
   ): Promise<boolean> {
     if (!canTransition(payment.status, to)) {
       return false;
@@ -472,7 +491,7 @@ export class PaymentService {
 
     const { count } = await this.prisma.payment.updateMany({
       where: { id: payment.id, status: payment.status },
-      data: { status: to },
+      data: { ...data, status: to },
     });
 
     return count === 1;
@@ -490,6 +509,7 @@ export class PaymentService {
       orderId: payment.orderId,
       amount: payment.amount,
       status: payment.status,
+      failureReason: payment.failureReason,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
     };
