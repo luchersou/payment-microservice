@@ -17,3 +17,12 @@ scrape_configs:
     static_configs:
       - targets: ['payment-service:3002']
     metrics_path: '/metrics'
+  # Built-in rabbitmq_prometheus plugin (enabled in the official image).
+  # queue_coarse_metrics = per-queue ready/unacked counts, including
+  # the *.retry and *.dlq queues.
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+    metrics_path: '/metrics/detailed'
+    params:
+      family: ['queue_coarse_metrics']
