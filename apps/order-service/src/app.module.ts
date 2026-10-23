@@ -7,6 +7,7 @@ import { createEnvValidator } from '@common/config';
 import { RabbitMQModule } from '@messaging/rabbitmq';
 
 import { OrderEnvironment } from './config/env.validation';
+import { HealthModule } from './modules/health/health.module';
 import { OrderModule } from './modules/order/order.module';
 
 @Module({
@@ -18,6 +19,7 @@ import { OrderModule } from './modules/order/order.module';
     PrismaModule,
     RabbitMQModule,
     OrderModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

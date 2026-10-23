@@ -7,6 +7,7 @@ import { RabbitMQModule } from '@messaging/rabbitmq';
 import { CustomHttpModule } from './common/http';
 import { correlationIdMiddleware } from './common/middleware';
 import { GatewayEnvironment } from './config/env.validation';
+import { HealthModule } from './modules/health/health.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { OrdersModule } from './modules/orders';
 import { PaymentsModule } from './modules/payments';
@@ -22,6 +23,7 @@ import { PaymentsModule } from './modules/payments';
     OrdersModule,
     PaymentsModule,
     MetricsModule,
+    HealthModule,
   ],
 })
 export class AppModule implements NestModule {
