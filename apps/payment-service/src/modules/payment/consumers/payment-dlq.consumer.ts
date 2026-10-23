@@ -6,7 +6,12 @@ import { ConsumeMessage } from 'amqplib';
 import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
 import { MetricNames } from '@common/metrics';
-import { DLQ, Exchanges } from '@messaging/rabbitmq';
+import {
+  createDelayedRequeueErrorHandler,
+  DLQ,
+  Exchanges,
+  getDeadLetterReason,
+} from '@messaging/rabbitmq';
 import {
   OrderCancelledEvent,
   OrderCreatedEvent,
@@ -33,6 +38,7 @@ export class PaymentDlqConsumer {
     routingKey: DLQ.PAYMENT_ORDER_CREATED,
     queue: DLQ.PAYMENT_ORDER_CREATED,
     queueOptions: { durable: true },
+    errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handleOrderCreatedDlq(
     event: OrderCreatedEvent,
@@ -55,12 +61,13 @@ export class PaymentDlqConsumer {
           queue: DLQ.PAYMENT_ORDER_CREATED,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,
-          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+          error: getDeadLetterReason(amqpMsg),
         });
       } catch (error) {
         this.logger.error(
           `❌ Failed to process DLQ message for ${DLQ.PAYMENT_ORDER_CREATED}`,
         );
+        throw error;
       } finally {
         endTimer();
       }
@@ -76,6 +83,7 @@ export class PaymentDlqConsumer {
     routingKey: DLQ.PAYMENT_ORDER_CANCELLED,
     queue: DLQ.PAYMENT_ORDER_CANCELLED,
     queueOptions: { durable: true },
+    errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handleOrderCancelledDlq(
     event: OrderCancelledEvent,
@@ -100,12 +108,13 @@ export class PaymentDlqConsumer {
           queue: DLQ.PAYMENT_ORDER_CANCELLED,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,
-          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+          error: getDeadLetterReason(amqpMsg),
         });
       } catch (error) {
         this.logger.error(
           `❌ Failed to process DLQ message for ${DLQ.PAYMENT_ORDER_CANCELLED}`,
         );
+        throw error;
       } finally {
         endTimer();
       }

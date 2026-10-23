@@ -219,6 +219,7 @@ export class OrderService {
         `❌ Could not save failed message to database — queue: ${data.queue} | routingKey: ${data.routingKey}`,
         err instanceof Error ? err.stack : String(err),
       );
+      throw err;
     }
   }
 
