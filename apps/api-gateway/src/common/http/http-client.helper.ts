@@ -1,14 +1,32 @@
 import {
+  BadGatewayException,
+  GatewayTimeoutException,
+  HttpException,
   Logger,
   NotFoundException,
-  RequestTimeoutException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 
-import { AxiosResponse } from 'axios';
-import { catchError, firstValueFrom, Observable, tap, timeout } from 'rxjs';
+import { AxiosError, AxiosResponse } from 'axios';
+import {
+  catchError,
+  firstValueFrom,
+  Observable,
+  tap,
+  timeout,
+  TimeoutError,
+} from 'rxjs';
 
 import { CorrelationIdService } from '@common/context';
 
+/**
+ * Proxies a downstream HTTP call and maps failures to gateway semantics:
+ * - downstream 404 → 404 (with notFoundMessage when given)
+ * - other downstream 4xx → same status and body (client error)
+ * - downstream 5xx → 502 Bad Gateway
+ * - no response (connection refused, DNS…) → 503 Service Unavailable
+ * - timeout → 504 Gateway Timeout
+ */
 export async function makeHttpRequest<T>(
   observable: Observable<AxiosResponse<T>>,
   timeoutMs: number,
@@ -16,46 +34,60 @@ export async function makeHttpRequest<T>(
 ): Promise<T> {
   const correlationId = CorrelationIdService.getId();
 
-  try {
-    const response = await firstValueFrom(
-      observable.pipe(
-        tap((response) => {
-          Logger.log(
-            `[${correlationId}] ${response.config.method?.toUpperCase()} ${
-              response.config.url
-            } - ${response.status}`,
-          );
-        }),
-        timeout(timeoutMs),
-        catchError((error) => {
-          const url = error.config?.url || 'unknown';
+  const response = await firstValueFrom(
+    observable.pipe(
+      tap((response) => {
+        Logger.log(
+          `[${correlationId}] ${response.config.method?.toUpperCase()} ${
+            response.config.url
+          } - ${response.status}`,
+        );
+      }),
+      timeout(timeoutMs),
+      catchError((error: unknown) => {
+        throw toHttpException(error, correlationId, timeoutMs, notFoundMessage);
+      }),
+    ),
+  );
 
-          if (error.response?.status === 404 && notFoundMessage) {
-            Logger.warn(`[${correlationId}] 404 Not Found: ${url}`);
-            throw new NotFoundException(notFoundMessage);
-          }
+  return response.data;
+}
 
-          if (error.name === 'TimeoutError') {
-            Logger.error(`[${correlationId}] Timeout: ${url} (${timeoutMs}ms)`);
-            throw new RequestTimeoutException('Service is unavailable');
-          }
-
-          Logger.error(
-            `[${correlationId}] HTTP Error: ${url} - ${error.message}`,
-          );
-          throw new RequestTimeoutException('Service is unavailable');
-        }),
-      ),
-    );
-
-    return response.data;
-  } catch (error) {
-    if (
-      error instanceof NotFoundException ||
-      error instanceof RequestTimeoutException
-    ) {
-      throw error;
-    }
-    throw new Error(`[${correlationId}] Request failed`);
+function toHttpException(
+  error: unknown,
+  correlationId: string | undefined,
+  timeoutMs: number,
+  notFoundMessage?: string,
+): HttpException {
+  if (error instanceof TimeoutError) {
+    Logger.error(`[${correlationId}] Timeout after ${timeoutMs}ms`);
+    return new GatewayTimeoutException('Upstream service timed out');
   }
+
+  if (!(error instanceof AxiosError)) {
+    Logger.error(`[${correlationId}] Unexpected error: ${String(error)}`);
+    return new BadGatewayException('Upstream request failed');
+  }
+
+  const url = error.config?.url ?? 'unknown';
+  const status = error.response?.status;
+
+  if (status === undefined) {
+    Logger.error(`[${correlationId}] Unreachable: ${url} - ${error.message}`);
+    return new ServiceUnavailableException('Upstream service is unavailable');
+  }
+
+  if (status === 404) {
+    Logger.warn(`[${correlationId}] 404 Not Found: ${url}`);
+    return new NotFoundException(notFoundMessage ?? 'Resource not found');
+  }
+
+  if (status < 500) {
+    Logger.warn(`[${correlationId}] ${status} from ${url}`);
+    const body = error.response?.data as string | Record<string, unknown>;
+    return new HttpException(body ?? error.message, status);
+  }
+
+  Logger.error(`[${correlationId}] ${status} from ${url} - ${error.message}`);
+  return new BadGatewayException('Upstream service error');
 }

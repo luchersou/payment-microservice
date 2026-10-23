@@ -7,6 +7,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Close the RabbitMQ channel and DB pool on SIGTERM/SIGINT (docker stop)
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3002);
 
@@ -23,4 +26,4 @@ async function bootstrap() {
   console.log(`🚀 Payment Service running on port ${port}`);
 }
 
-bootstrap();
+void bootstrap();

@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -25,7 +26,7 @@ export class OrdersController {
 
   @Patch(':id/cancel')
   @HttpCode(HttpStatus.ACCEPTED)
-  async cancel(@Param('id') id: string) {
+  async cancel(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.cancelOrder(id);
   }
 
@@ -38,7 +39,7 @@ export class OrdersController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.findOne(id);
   }
 }

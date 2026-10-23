@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Query,
 } from '@nestjs/common';
 
@@ -30,13 +31,13 @@ export class PaymentsController {
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.paymentsService.findOne(id);
   }
 
   @Get('order/:orderId')
   @HttpCode(HttpStatus.OK)
-  async findByOrder(@Param('orderId') orderId: string) {
+  async findByOrder(@Param('orderId', ParseUUIDPipe) orderId: string) {
     return this.paymentsService.findByOrderId(orderId);
   }
 }

@@ -5,28 +5,30 @@ import {
 
 import { Exchanges } from '../constants';
 
-export const rabbitmqBaseConfig: RabbitMQConfig = {
-  uri: process.env.RABBITMQ_URL || 'amqp://localhost:5672',
+export function createRabbitMQConfig(uri: string): RabbitMQConfig {
+  return {
+    uri,
 
-  connectionInitOptions: { wait: false },
+    connectionInitOptions: { wait: false },
 
-  /**
-   * Safety net for subscribers without an explicit errorHandler: the library
-   * default is REQUEUE, which loops poison messages forever and never reaches
-   * the DLX. NACK (no requeue) lets the queue's dead-letter config take over.
-   */
-  defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.NACK,
+    /**
+     * Safety net for subscribers without an explicit errorHandler: the library
+     * default is REQUEUE, which loops poison messages forever and never reaches
+     * the DLX. NACK (no requeue) lets the queue's dead-letter config take over.
+     */
+    defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.NACK,
 
-  channels: {
-    'channel-1': {
-      prefetchCount: 10,
-      default: true,
+    channels: {
+      'channel-1': {
+        prefetchCount: 10,
+        default: true,
+      },
     },
-  },
 
-  exchanges: [
-    { name: Exchanges.ORDERS, type: 'topic', options: { durable: true } },
-    { name: Exchanges.PAYMENTS, type: 'topic', options: { durable: true } },
-    { name: Exchanges.DLX, type: 'topic', options: { durable: true } },
-  ],
-};
+    exchanges: [
+      { name: Exchanges.ORDERS, type: 'topic', options: { durable: true } },
+      { name: Exchanges.PAYMENTS, type: 'topic', options: { durable: true } },
+      { name: Exchanges.DLX, type: 'topic', options: { durable: true } },
+    ],
+  };
+}
