@@ -11,6 +11,7 @@ This project was built to showcase real-world backend architecture concepts such
 ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
+[![CI](https://github.com/luchersou/payment-microservice/actions/workflows/ci.yml/badge.svg)](https://github.com/luchersou/payment-microservice/actions/workflows/ci.yml)
 
 ---
 
@@ -52,14 +53,16 @@ graph LR
 
 ## 🏗️ Project Structure
 ```
-payment-microservices/
+payment-microservice/
 ├── apps/
 │   ├── api-gateway/                 # API Gateway (Port 3000)
 │   │   └── src/
 │   │       ├── common/
-│   │       │   ├── http/
-│   │       │   └── middleware/
+│   │       │   ├── http/            # Downstream HTTP client + error mapping
+│   │       │   └── middleware/      # Correlation ID
+│   │       ├── config/              # Environment schema (validated at boot)
 │   │       ├── modules/
+│   │       │   ├── health/
 │   │       │   ├── metrics/
 │   │       │   ├── orders/
 │   │       │   │   └── dto/
@@ -68,32 +71,36 @@ payment-microservices/
 │   │       └── main.ts
 │   │
 │   ├── order-service/               # Order Microservice (Port 3001)
-│   │   ├── prisma/
+│   │   ├── prisma/                  # Schema, migrations, generated client
 │   │   └── src/
+│   │       ├── config/
 │   │       ├── modules/
+│   │       │   ├── health/
 │   │       │   ├── metrics/
 │   │       │   └── order/
-│   │       │       ├── consumers/
+│   │       │       ├── consumers/   # Main + DLQ consumers
 │   │       │       ├── controllers/
-│   │       │       ├── services/
-│   │       │       └── dto/
+│   │       │       ├── domain/      # Order state machine
+│   │       │       ├── dto/
+│   │       │       └── services/
 │   │       ├── app.module.ts
-│   │       ├── main.ts
-│   │       └── rabbitmq.config.ts
+│   │       └── main.ts
 │   │
 │   └── payment-service/             # Payment Microservice (Port 3002)
 │       ├── prisma/
 │       └── src/
+│           ├── config/
 │           ├── modules/
+│           │   ├── health/
 │           │   ├── metrics/
 │           │   └── payment/
 │           │       ├── consumers/
 │           │       ├── controllers/
-│           │       ├── services/
-│           │       └── dto/
+│           │       ├── domain/      # Payment state machine
+│           │       ├── dto/
+│           │       └── services/
 │           ├── app.module.ts
-│           ├── main.ts
-│           └── rabbitmq.config.ts
+│           └── main.ts
 │
 ├── libs/
 │   ├── contracts/                   # Shared contracts, split by domain
@@ -102,19 +109,28 @@ payment-microservices/
 │   │
 │   ├── messaging/                   # Shared RabbitMQ module
 │   │   └── rabbitmq/
-│   │       ├── config/
-│   │       └── constants/
+│   │       ├── config/              # Connection, exchanges, queue options
+│   │       ├── constants/           # Exchanges, queues, routing keys, DLQs
+│   │       └── error-handling/      # Bounded retries + dead-lettering
 │   │
 │   └── common/                      # Shared utilities
-│       ├── context/
+│       ├── config/                  # Env validation helpers
+│       ├── context/                 # Correlation ID (AsyncLocalStorage)
 │       ├── events/                  # Generic BaseEvent
+│       ├── health/                  # Database / RabbitMQ health checks
+│       ├── logger/                  # Correlation-aware logger
 │       ├── messaging/
-│       └── metrics/                 # Cross-cutting MetricNames
+│       └── metrics/                 # MetricNames (event_type label values)
 │
-├── monitoring/                      # Observability stack (Prometheus + Grafana)
+├── monitoring/                      # Prometheus config + provisioned Grafana
 │   ├── grafana/
+│   │   └── provisioning/            # Datasource + Microservices Overview dashboard
 │   └── prometheus.yml
 │
+├── scripts/
+│   └── generate-traffic.mjs         # Load generator for the dashboard
+│
+├── .github/workflows/ci.yml         # Lint, type-check, tests, build
 ├── docker-compose.yml
 └── README.md
 ```
@@ -126,47 +142,72 @@ payment-microservices/
 ### ✅ API Gateway
 - Single entry point for all client requests
 - Routes queries (GET) directly to microservices via HTTP
-- Emits domain events (commands) via RabbitMQ exchanges without knowledge of downstream queues
-- Centralized error handling and logging
-- Request timeout handling
+- Emits commands as events via RabbitMQ exchanges without knowledge of downstream queues
+- Generates the `orderId` and returns it immediately (`202 Accepted`), so clients can track the order
+- Validates input: request bodies via DTOs and every `:id` / `:orderId` as a UUID (`400` otherwise)
+- Maps downstream failures to gateway status codes (see [Error Responses](#-error-responses))
+- Propagates a correlation ID (`x-correlation-id`) through HTTP calls and events
 
 ### ✅ Order Service
-* Manages order lifecycle (PENDING_PAYMENT → PAID → CANCELLED → FAILED)
-* Consumes `order.create.requested` and `order.cancel.requested` events to persist order state
-* Consumes `payment.approved`, `payment.declined`, `payment.failed` events to update order status
-* Emits `order.created` and `order.cancelled` events to trigger downstream reactions
+* Manages the order lifecycle with an explicit state machine:
+  ```
+  PENDING_PAYMENT ──► PAID ──► CANCELLED   (user cancel, payment refunded)
+         │
+         ├──► CANCELLED                    (user cancel)
+         └──► FAILED                       (payment declined or failed)
+  ```
+  `CANCELLED` and `FAILED` are terminal
+* Consumes `order.create.requested` and `order.cancel.requested` to create and cancel orders
+* Consumes `payment.approved`, `payment.declined`, `payment.failed` to update the order status
+* Emits `order.created` and `order.cancelled` to trigger downstream reactions
 * RESTful API for order queries (GET endpoints)
 * Isolated PostgreSQL database
 
 ### ✅ Payment Service
-* Manages payment lifecycle (PROCESSING → APPROVED / DECLINED / FAILED / REFUNDED / CANCELLED)
-* Consumes `order.created` event to initiate payment processing
-* Consumes `order.cancelled` event to cancel or refund payments in progress
-* Emits `payment.approved`, `payment.declined`, `payment.failed` events based on processing result
-* Simulates payment gateway integration with approval/decline logic
+* Manages the payment lifecycle with an explicit state machine:
+  ```
+  PROCESSING ──► APPROVED ──► REFUNDED   (order cancelled after payment)
+      │
+      ├──► DECLINED                      (gateway declined, or order cancelled while processing)
+      └──► FAILED                        (unexpected gateway error)
+  ```
+* Consumes `order.created` to process the payment and `order.cancelled` to decline or refund it
+* Emits `payment.approved`, `payment.declined`, `payment.failed` based on the result
+* Simulates a payment gateway (~1.5s latency, ~20% declined for insufficient funds)
 * Provides payment statistics and queries
 * Isolated PostgreSQL database
 
 ### ✅ Event-Driven Architecture
-- RabbitMQ (topic exchanges) for asynchronous pub/sub messaging
-- Dead Letter Queues (DLQ) per service for failed message isolation and retry strategies
-- Each service owns its queues and subscribes to events via routing keys
-- Loose coupling through event-driven communication (no shared queues between services)
+- RabbitMQ topic exchanges (`orders.exchange`, `payments.exchange`) for asynchronous pub/sub
+- Each service owns its queues and binds them to the routing keys it consumes
+- No shared queues between services
 - Durable queues and persistent messages
 
+### ✅ Reliability
+- **Bounded retries**: a failing message is retried **3 times, 5 seconds apart** (through a `<queue>.retry` TTL queue), then sent to the service's **DLQ**
+- **Dead letters are persisted** in a `failed_messages` table with the real error; if the database is down, the DLQ message is requeued instead of lost
+- **Idempotent consumers**: redelivered messages never create duplicate orders or payments; if a previous attempt crashed after writing, the event is republished or the payment is resumed
+- **Atomic state transitions**: every status change is a conditional update guarded by the state machine, so concurrent events (e.g. a cancel racing a payment approval) cannot overwrite each other
+- **Out-of-order events**: a cancel that arrives before the order or payment exists is retried instead of dropped
+- **Health checks** (database + RabbitMQ) used by Docker Compose, **graceful shutdown** on `SIGTERM`, and **environment validation** at boot
+
 ### ✅ Saga Pattern (Choreography)
-- **Happy path**: `order.create.requested` → `order.created` → `payment.approved` → order marked as PAID
-- **Failure path**: `payment.declined` / `payment.failed` → order marked as CANCELLED / FAILED
-- **Compensating transaction**: `order.cancel.requested` → `order.cancelled` → payment marked as CANCELLED or REFUNDED
-- **No central coordinator** — each service reacts to domain events via its own queues and emits new events
+- **Happy path**: `order.create.requested` → `order.created` → `payment.approved` → order `PAID`
+- **Failure path**: `payment.declined` or `payment.failed` → order `FAILED`
+- **Compensating transaction**: `order.cancel.requested` → order `CANCELLED` → `order.cancelled` → payment `DECLINED` (if still processing) or `REFUNDED` (if already approved)
+- **No central coordinator**: each service reacts to domain events via its own queues and emits new events
 
 ### Messaging Design
 
-- Topic-based exchanges (orders.exchange, payments.exchange)
-- Routing keys define event types (e.g., order.created, payment.approved)
-- Each service owns its queues (e.g., order.payment-result.queue)
-- No shared queues across services
-- Consumers subscribe using routing key patterns (e.g., payment.*)
+| Exchange | Routing key | Published by | Consumed by (queue) |
+|----------|-------------|--------------|---------------------|
+| `orders.exchange` | `order.create.requested` | API Gateway | Order Service (`order.create.queue`) |
+| `orders.exchange` | `order.cancel.requested` | API Gateway | Order Service (`order.cancel-requested.queue`) |
+| `orders.exchange` | `order.created` | Order Service | Payment Service (`payment.order-created.queue`) |
+| `orders.exchange` | `order.cancelled` | Order Service | Payment Service (`payment.order-cancelled.queue`) |
+| `payments.exchange` | `payment.approved` / `payment.declined` / `payment.failed` | Payment Service | Order Service (`order.payment-result.queue`) |
+
+Each queue has a `<queue>.retry` companion and a dead-letter queue bound on `dlx.exchange` (e.g. `order.create.dlq`).
 
 ---
 
@@ -179,6 +220,10 @@ payment-microservices/
 | **RabbitMQ** | Message broker for event-driven architecture |
 | **PostgreSQL** | Relational database for order and payment data |
 | **Prisma ORM** | Type-safe database access and migrations |
+| **Prometheus** | Metrics collection (services + RabbitMQ) |
+| **Grafana** | Provisioned dashboard |
+| **Jest** | Unit tests |
+| **GitHub Actions** | CI: lint, type-check, tests, build |
 | **Docker** | Containerization for consistent environments |
 | **Docker Compose** | Multi-container orchestration |
 
@@ -188,9 +233,8 @@ payment-microservices/
 
 ### Prerequisites
 
-- **Node.js** (v18+)
 - **Docker** and **Docker Compose**
-- **npm** or **yarn**
+- **Node.js 20+** and **npm** (only for local development, tests, and the traffic generator)
 
 ### Steps
 
@@ -200,19 +244,44 @@ payment-microservices/
    cd payment-microservice
 ```
 
-2. **Install dependencies**
+2. **Start everything with Docker Compose** (services, databases, RabbitMQ, Prometheus, Grafana)
+```bash
+   docker compose up --build
+```
+   Migrations run automatically on startup. If port 3000 is already in use, pick another host port for the gateway:
+```bash
+   API_GATEWAY_PORT=3010 docker compose up --build
+```
+
+3. **Install dependencies locally** (optional: for tests, lint, and `npm run traffic`)
 ```bash
    npm install
 ```
 
-3. **Start services with Docker Compose**
-```bash
-   docker compose up --build
-```
-   If port 3000 is already in use, pick another host port for the gateway:
-```bash
-   API_GATEWAY_PORT=3010 docker compose up --build
-```
+### Ports
+
+| Service | URL |
+|---------|-----|
+| API Gateway | http://localhost:3000/api |
+| Order Service | http://localhost:3001 |
+| Payment Service | http://localhost:3002 |
+| Grafana | http://localhost:3003 |
+| Prometheus | http://localhost:9090 |
+| RabbitMQ Management | http://localhost:15672 |
+| Order DB / Payment DB | `localhost:5433` / `localhost:5434` |
+
+### Environment Variables
+
+Validated at boot: a service with an invalid or missing variable fails to start and lists every problem. Docker Compose sets them for you.
+
+| Variable | Used by | Default |
+|----------|---------|---------|
+| `PORT` | all | `3000` / `3001` / `3002` |
+| `RABBITMQ_URL` | all | `amqp://localhost:5672` |
+| `DATABASE_URL` | order, payment | **required** (`postgresql://...`) |
+| `ORDER_SERVICE_URL` | gateway | `http://localhost:3001` |
+| `PAYMENT_SERVICE_URL` | gateway | `http://localhost:3002` |
+| `REQUEST_TIMEOUT` | gateway | `5000` (ms) |
 
 ---
 
@@ -226,7 +295,7 @@ The stack ships with Prometheus and a provisioned Grafana dashboard. Nothing to 
 | **Prometheus** (Status → Targets) | http://localhost:9090 | — |
 | **RabbitMQ Management** | http://localhost:15672 | `admin` / `admin123` |
 
-**Generate traffic** so the panels have data (needs the stack running):
+**Generate traffic** so the panels have data (needs the stack running and `npm install`):
 ```bash
 npm run traffic                          # ~2 orders/s for 2 minutes
 npm run traffic -- --duration 60 --rate 5
@@ -241,7 +310,7 @@ The dashboard has five sections:
 - **Messaging (RabbitMQ)**: p95 processing time per event, queue depth (including `*.retry` and `*.dlq`), failed messages by outcome
 - **Runtime (Node.js)**: CPU, memory and event loop lag per service
 
-Scraped endpoints: `api-gateway:3000/api/metrics`, `order-service:3001/metrics`, `payment-service:3002/metrics`, and RabbitMQ's built-in exporter (`rabbitmq:15692/metrics/detailed`). Health checks: `/api/health` (gateway) and `/health` (services).
+Scraped endpoints: `api-gateway:3000/api/metrics`, `order-service:3001/metrics`, `payment-service:3002/metrics`, and RabbitMQ's built-in exporter (`rabbitmq:15692/metrics/detailed`).
 
 ---
 
@@ -253,10 +322,10 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/orders` | Create a new order (emits event) |
-| `GET` | `/orders` | Get all orders (paginated) |
+| `POST` | `/orders` | Create an order (emits event, returns `orderId`) |
+| `GET` | `/orders` | Get all orders (paginated, `page` / `limit` ≤ 100) |
 | `GET` | `/orders/:id` | Get order by ID |
-| `PATCH` | `/orders/:id` | Update order status (emits event) |
+| `PATCH` | `/orders/:id/cancel` | Cancel an order (emits event) |
 
 ### 💳 Payments
 
@@ -267,6 +336,23 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 | `GET` | `/payments/order/:orderId` | Get payment by order ID |
 | `GET` | `/payments/stats` | Get payment statistics by status |
 
+### ⚙️ Operations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Gateway health (RabbitMQ). Services expose `GET /health` with database + RabbitMQ |
+| `GET` | `/metrics` | Prometheus metrics |
+
+### ❗ Error Responses
+
+| Status | When |
+|--------|------|
+| `400 Bad Request` | Invalid body or an `:id` that is not a UUID |
+| `404 Not Found` | Order or payment does not exist |
+| `502 Bad Gateway` | A downstream service returned 5xx |
+| `503 Service Unavailable` | A downstream service is unreachable |
+| `504 Gateway Timeout` | A downstream service did not answer within `REQUEST_TIMEOUT` |
+
 ---
 
 ## 📡 Event Flow
@@ -274,16 +360,17 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 ### Create Order Flow
 ```
 1. Client → POST /api/orders
-2. API Gateway → Emit order.create.requested → RabbitMQ
+2. API Gateway → Generate orderId
+               → Emit order.create.requested → RabbitMQ
+               → Respond 202 with orderId
 
 3. Order Service → Consume order.create.requested
-   - Generate orderId
    - Persist order (status: PENDING_PAYMENT)
    - Emit order.created → RabbitMQ
 
 4. Payment Service → Consume order.created
    - Create payment (status: PROCESSING)
-   - Simulate payment gateway (async processing)
+   - Call the simulated payment gateway
 
 5. Payment Service → Emit:
    - payment.approved
@@ -293,8 +380,8 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 6. Order Service → Consume payment event
    - Update order status:
      - payment.approved → PAID
-     - payment.declined → CANCELLED
-     - payment.failed → FAILED
+     - payment.declined → FAILED
+     - payment.failed   → FAILED
 ```
 
 ### Cancel Order Flow
@@ -303,12 +390,14 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 2. API Gateway → Emit order.cancel.requested → RabbitMQ
 
 3. Order Service → Consume order.cancel.requested
-   - Update order status → CANCELLED
-   - Emit order.cancelled → RabbitMQ
+   - If PENDING_PAYMENT or PAID → Update order status → CANCELLED
+                                → Emit order.cancelled → RabbitMQ
+   - If FAILED → Ignore (terminal)
 
 4. Payment Service → Consume order.cancelled
-   - If PROCESSING → Mark as CANCELLED
-   - If APPROVED → Initiate refund → Mark as REFUNDED
+   - If PROCESSING → Mark as DECLINED
+   - If APPROVED   → Refund → Mark as REFUNDED
+   - Otherwise     → Ignore
 ```
 ---
 
@@ -353,7 +442,7 @@ GET http://localhost:3000/api/orders?page=1&limit=10
 
 **cURL:**
 ```bash
-curl http://localhost:3000/api/orders?page=1&limit=10
+curl "http://localhost:3000/api/orders?page=1&limit=10"
 ```
 
 **Response:**
@@ -408,19 +497,17 @@ curl http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195
 }
 ```
 
-#### Cancel Order (Manual)
+#### Cancel Order
 ```bash
 PATCH http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195/cancel
 ```
 
 **cURL:**
 ```bash
-curl -X PATCH http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195 \
-  -H "Content-Type: application/json" \
-  -d '{"status": "CANCELLED"}'
+curl -X PATCH http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195/cancel
 ```
 
-**Response:**
+**Response:** `202 Accepted`
 ```json
 {
     "orderId": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
@@ -439,7 +526,7 @@ GET http://localhost:3000/api/payments?page=1&limit=10
 
 **cURL:**
 ```bash
-curl http://localhost:3000/api/payments?page=1&limit=10
+curl "http://localhost:3000/api/payments?page=1&limit=10"
 ```
 
 **Response:**
@@ -546,12 +633,36 @@ curl http://localhost:3000/api/payments/stats
 
 ---
 
+## 🧑‍💻 Development
+
+```bash
+npm test               # unit tests (Jest)
+npm run lint:check     # lint without fixing (npm run lint fixes)
+npm run typecheck      # type-check, including specs
+npm run build          # build libs and the three apps
+```
+
+CI runs the same four steps on every pull request and push to `main`.
+
+To run a service outside Docker, start the infrastructure with `docker compose up -d order-db payment-db rabbitmq` and set the [environment variables](#environment-variables) for that service, e.g. for the order service:
+
+```bash
+DATABASE_URL=postgresql://admin:admin123@localhost:5433/order_db \
+RABBITMQ_URL=amqp://admin:admin123@localhost:5672 \
+npm run start:order:dev
+```
+
+---
+
 ## 🏛️ Design Patterns Used
 
 - **Microservices Architecture**: Independent services with isolated databases
 - **API Gateway Pattern**: Single entry point for client requests
 - **Event-Driven Architecture**: Asynchronous communication via RabbitMQ
 - **Saga Pattern (Choreography)**: Distributed transactions with compensating actions across services
+- **State Machine**: Explicit, atomically enforced status transitions for orders and payments
+- **Idempotent Consumer**: Safe handling of redelivered messages
+- **Retry + Dead Letter Queue**: Bounded, delayed retries before isolating poison messages
 
 ---
 
