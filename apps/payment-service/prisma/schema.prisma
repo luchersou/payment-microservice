@@ -14,7 +14,8 @@ datasource db {
 model Payment {
   id        String        @id @default(uuid())
   orderId   String        @unique
-  amount    Float
+  /// Null for a tombstone: the order was cancelled before OrderCreated arrived
+  amount    Float?
   status    PaymentStatus @default(PROCESSING)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -37,4 +38,5 @@ enum PaymentStatus {
   DECLINED
   REFUNDED
   FAILED
+  CANCELLED
 }

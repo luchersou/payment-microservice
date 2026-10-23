@@ -27,18 +27,6 @@ import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
 
 const DEFAULT_DECLINE_REASON = 'Insufficient funds';
 
-/**
- * OrderCreated and OrderCancelled arrive on separate queues, so a cancel can
- * be processed before the payment exists. Throwing lets the retry error
- * handler redeliver it once OrderCreated has been handled.
- */
-export class PaymentNotFoundYetError extends Error {
-  constructor(orderId: string) {
-    super(`Payment for order ${orderId} not found yet`);
-    this.name = PaymentNotFoundYetError.name;
-  }
-}
-
 /** The payment changed between read and conditional write; retry re-reads it */
 export class ConcurrentPaymentUpdateError extends Error {
   constructor(paymentId: string) {
@@ -133,6 +121,8 @@ export class PaymentService {
    * Idempotent on orderId:
    * - new payment → charge it
    * - existing PROCESSING payment (previous attempt crashed mid-way) → resume
+   * - CANCELLED payment (tombstone: the order was cancelled first) → do
+   *   nothing, the customer must not be charged
    * - already decided payment (previous attempt failed to publish) →
    *   republish its result; the order service handles results idempotently
    */
@@ -140,6 +130,13 @@ export class PaymentService {
     this.logger.log(`💳 Processing payment for order ${payload.orderId}`);
 
     const { payment, created } = await this.findOrCreatePayment(payload);
+
+    if (payment.status === PaymentStatus.CANCELLED) {
+      this.logger.warn(
+        `⚠️ Order ${payload.orderId} was cancelled before payment, not charging`,
+      );
+      return;
+    }
 
     if (payment.status !== PaymentStatus.PROCESSING) {
       this.logger.warn(
@@ -158,6 +155,12 @@ export class PaymentService {
     await this.processPayment(payment);
   }
 
+  /**
+   * OrderCreated and OrderCancelled arrive on separate queues, so the cancel
+   * may be handled first. Instead of waiting for the payment (a bounded retry
+   * that, once exhausted, let the order be charged anyway), a CANCELLED
+   * tombstone is written so a later OrderCreated finds it and never charges.
+   */
   async handleOrderCancelled(payload: OrderCancelledPayload) {
     this.logger.log(`🚫 Cancelling payment for order ${payload.orderId}`);
 
@@ -165,11 +168,17 @@ export class PaymentService {
       where: { orderId: payload.orderId },
     });
 
-    if (!payment) {
-      throw new PaymentNotFoundYetError(payload.orderId);
+    if (payment) {
+      await this.cancelPaymentByStatus(payment);
+      return;
     }
 
-    await this.cancelPaymentByStatus(payment);
+    const existing = await this.createCancelledTombstone(payload.orderId);
+
+    if (existing) {
+      // OrderCreated created the payment between the read and the write
+      await this.cancelPaymentByStatus(existing);
+    }
   }
 
   async saveFailedMessage(data: {
@@ -232,6 +241,30 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Returns null when the tombstone was written, or the payment that
+   * OrderCreated created concurrently (unique orderId) when it lost the race.
+   */
+  private async createCancelledTombstone(
+    orderId: string,
+  ): Promise<Payment | null> {
+    try {
+      await this.prisma.payment.create({
+        data: { orderId, status: PaymentStatus.CANCELLED },
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      return this.prisma.payment.findUniqueOrThrow({ where: { orderId } });
+    }
+
+    this.metrics.incrementPaymentsCancelled();
+    this.logger.log(
+      `🪦 Payment for order ${orderId} recorded as CANCELLED before OrderCreated`,
+    );
+    return null;
+  }
+
   private async processPayment(payment: Payment) {
     let result: { approved: boolean; reason?: string };
 
@@ -267,16 +300,17 @@ export class PaymentService {
         return;
 
       case PaymentStatus.PROCESSING:
-        await this.transitionOrThrow(payment, PaymentStatus.DECLINED);
-        this.metrics.incrementPaymentsDeclined('order_cancelled');
+        await this.transitionOrThrow(payment, PaymentStatus.CANCELLED);
+        this.metrics.incrementPaymentsCancelled();
         this.logger.log(
-          `✅ Payment ${payment.id} declined due to order cancellation`,
+          `✅ Payment ${payment.id} cancelled due to order cancellation`,
         );
         return;
 
       case PaymentStatus.DECLINED:
       case PaymentStatus.FAILED:
       case PaymentStatus.REFUNDED:
+      case PaymentStatus.CANCELLED:
         this.logger.log(
           `ℹ️ Payment ${payment.id} already ${payment.status}, skipping`,
         );
@@ -369,7 +403,7 @@ export class PaymentService {
       case PaymentStatus.FAILED:
         return this.publishFailed(payment);
       default:
-        // REFUNDED: the order was already cancelled, nothing to report
+        // REFUNDED / CANCELLED: the order was cancelled, nothing to report
         return;
     }
   }

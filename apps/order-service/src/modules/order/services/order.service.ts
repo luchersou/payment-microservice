@@ -21,18 +21,6 @@ import { sourceStatusesFor } from '../domain/order-state-machine';
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
 
-/**
- * Thrown when a cancel request arrives before the order is persisted
- * (the gateway returns the orderId before the order is created).
- * The retry error handler redelivers the message later.
- */
-export class OrderNotFoundYetError extends Error {
-  constructor(orderId: string) {
-    super(`Order ${orderId} not found yet`);
-    this.name = OrderNotFoundYetError.name;
-  }
-}
-
 @Injectable()
 export class OrderService {
   private readonly logger = new CorrelationLogger(OrderService.name);
@@ -92,6 +80,9 @@ export class OrderService {
    * existing order and republishes OrderCreated while it is still pending,
    * covering the case where the previous attempt persisted but failed to
    * publish. The payment service is idempotent on orderId.
+   *
+   * If the order was cancelled before this request was handled, a CANCELLED
+   * tombstone already holds the id, so OrderCreated is never published.
    */
   async createOrder(payload: CreateOrderRequestedPayload) {
     // Fallback for requests published before the gateway sent orderId
@@ -118,8 +109,10 @@ export class OrderService {
       this.amqpConnection,
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
+      // From the request: only tombstones have null userId/total, and they
+      // are CANCELLED, so they never reach this point
       new OrderCreatedEvent(
-        { orderId: order.id, userId: order.userId, total: order.total },
+        { orderId: order.id, userId: payload.userId, total: payload.total },
         correlationId,
       ),
     );
@@ -224,12 +217,13 @@ export class OrderService {
         ? OrderStatus.FAILED
         : OrderStatus.CANCELLED;
 
-    const { order, changed } = await this.transition(orderId, target);
+    let { order, changed } = await this.transition(orderId, target);
+
+    if (!order && reason === CancelReason.USER_REQUESTED) {
+      ({ order, changed } = await this.createCancelledTombstone(orderId));
+    }
 
     if (!order) {
-      if (reason === CancelReason.USER_REQUESTED) {
-        throw new OrderNotFoundYetError(orderId);
-      }
       this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
       return;
     }
@@ -266,6 +260,32 @@ export class OrderService {
     }
 
     return order;
+  }
+
+  /**
+   * The gateway returns the orderId before the order exists, so a cancel can
+   * be handled before its create request. Instead of waiting for the order
+   * (a bounded retry that, once exhausted, let it be created and charged),
+   * the id is taken by a CANCELLED tombstone the later create will find.
+   */
+  private async createCancelledTombstone(
+    orderId: string,
+  ): Promise<{ order: Order | null; changed: boolean }> {
+    try {
+      const order = await this.prisma.order.create({
+        data: { id: orderId, status: OrderStatus.CANCELLED },
+      });
+
+      this.logger.log(
+        `🪦 Order ${orderId} recorded as CANCELLED before being created`,
+      );
+      return { order, changed: true };
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      // The create request persisted the order between the update and insert
+      return this.transition(orderId, OrderStatus.CANCELLED);
+    }
   }
 
   // ─────────────────────────────────────────────
