@@ -1,4 +1,3 @@
 export enum CancelReason {
   USER_REQUESTED = 'USER_REQUESTED',
-  PAYMENT_DECLINED = 'PAYMENT_DECLINED',
 }

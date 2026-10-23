@@ -158,10 +158,9 @@ export class OrderConsumer {
             await this.orderService.completeOrder(orderId);
             break;
 
+          // Declined and failed payments both fail the order without
+          // publishing anything: OrderCancelled is only for user cancels
           case PaymentEventTypes.PAYMENT_DECLINED:
-            await this.orderService.cancelByPaymentDeclined(orderId);
-            break;
-
           case PaymentEventTypes.PAYMENT_FAILED:
             await this.orderService.failOrder(orderId);
             break;

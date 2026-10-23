@@ -278,29 +278,29 @@ describe('OrderService', () => {
     });
   });
 
-  describe('cancelByPaymentDeclined', () => {
-    it('moves PENDING_PAYMENT to FAILED', async () => {
+  describe('failOrder (PaymentDeclined / PaymentFailed)', () => {
+    it('fails a PENDING_PAYMENT order without publishing anything', async () => {
       fake.seed('o', OrderStatus.PENDING_PAYMENT);
 
-      await service.cancelByPaymentDeclined('o');
+      await service.failOrder('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.FAILED);
-      expect(amqp.publish).toHaveBeenCalledTimes(1);
+      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(metrics.incrementOrdersCancelled).not.toHaveBeenCalled();
     });
 
     it('never marks a PAID order as FAILED', async () => {
       fake.seed('o', OrderStatus.PAID);
 
-      await service.cancelByPaymentDeclined('o');
+      await service.failOrder('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.PAID);
       expect(amqp.publish).not.toHaveBeenCalled();
     });
 
     it('ignores an unknown order', async () => {
-      await expect(
-        service.cancelByPaymentDeclined('missing'),
-      ).resolves.toBeUndefined();
+      await expect(service.failOrder('missing')).resolves.toBeUndefined();
+      expect(fake.orders.size).toBe(0);
     });
   });
 });

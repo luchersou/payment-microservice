@@ -144,14 +144,67 @@ export class OrderService {
     return order;
   }
 
+  /**
+   * The only source of OrderCancelled: payment results never cancel an
+   * order, a declined or failed payment fails it (see failOrder).
+   */
   async cancelByUser(orderId: string) {
-    return this.cancelOrderInternal(orderId, CancelReason.USER_REQUESTED);
+    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
+
+    let { order, changed } = await this.transition(
+      orderId,
+      OrderStatus.CANCELLED,
+    );
+
+    if (!order) {
+      ({ order, changed } = await this.createCancelledTombstone(orderId));
+    }
+
+    if (!order) {
+      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
+      return;
+    }
+
+    if (!changed && order.status !== OrderStatus.CANCELLED) {
+      this.logger.warn(
+        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
+      );
+      return;
+    }
+
+    // Published when the transition happened now, and republished when the
+    // order is already CANCELLED (redelivery after a failed publish). The
+    // payment service handles OrderCancelled idempotently.
+    const correlationId = CorrelationIdService.getId();
+    const reason = CancelReason.USER_REQUESTED;
+
+    await publishEvent(
+      this.amqpConnection,
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CANCELLED,
+      new OrderCancelledEvent(
+        { orderId: order.id, reason, cancelledAt: order.updatedAt },
+        correlationId,
+      ),
+    );
+
+    if (changed) {
+      this.logger.log(`✅ Order ${orderId} updated to CANCELLED successfully`);
+      this.metrics.incrementOrdersCancelled(reason);
+    } else {
+      this.logger.warn(
+        `⚠️ Order ${orderId} already CANCELLED. OrderCancelled republished.`,
+      );
+    }
+
+    return order;
   }
 
-  async cancelByPaymentDeclined(orderId: string) {
-    return this.cancelOrderInternal(orderId, CancelReason.PAYMENT_DECLINED);
-  }
-
+  /**
+   * Handles both PaymentDeclined and PaymentFailed. Publishes nothing: the
+   * payment is already final (DECLINED/FAILED), so there is nothing for the
+   * payment service to compensate.
+   */
   async failOrder(orderId: string) {
     const { order, changed } = await this.transition(
       orderId,
@@ -160,7 +213,7 @@ export class OrderService {
 
     if (!order) {
       this.logger.warn(
-        `⚠️ Order ${orderId} not found. Ignoring PaymentFailed.`,
+        `⚠️ Order ${orderId} not found. Ignoring payment result.`,
       );
       return;
     }
@@ -208,59 +261,6 @@ export class OrderService {
   // ─────────────────────────────────────────────
   // PRIVATE — ORDER CANCELLATION
   // ─────────────────────────────────────────────
-
-  private async cancelOrderInternal(orderId: string, reason: CancelReason) {
-    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
-
-    const target =
-      reason === CancelReason.PAYMENT_DECLINED
-        ? OrderStatus.FAILED
-        : OrderStatus.CANCELLED;
-
-    let { order, changed } = await this.transition(orderId, target);
-
-    if (!order && reason === CancelReason.USER_REQUESTED) {
-      ({ order, changed } = await this.createCancelledTombstone(orderId));
-    }
-
-    if (!order) {
-      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-      return;
-    }
-
-    if (!changed && order.status !== target) {
-      this.logger.warn(
-        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
-      );
-      return;
-    }
-
-    // Published when the transition happened now, and republished when the
-    // order is already in the target status (redelivery after a failed
-    // publish). The payment service handles OrderCancelled idempotently.
-    const correlationId = CorrelationIdService.getId();
-
-    await publishEvent(
-      this.amqpConnection,
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
-      new OrderCancelledEvent(
-        { orderId: order.id, reason, cancelledAt: order.updatedAt },
-        correlationId,
-      ),
-    );
-
-    if (changed) {
-      this.logger.log(`✅ Order ${orderId} updated to ${target} successfully`);
-      this.metrics.incrementOrdersCancelled(reason);
-    } else {
-      this.logger.warn(
-        `⚠️ Order ${orderId} already ${target}. OrderCancelled republished.`,
-      );
-    }
-
-    return order;
-  }
 
   /**
    * The gateway returns the orderId before the order exists, so a cancel can

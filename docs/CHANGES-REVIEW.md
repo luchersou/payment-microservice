@@ -74,3 +74,19 @@ divergia da descrição da tarefa, ou quando havia mais de uma opção razoável
   verificável pela API.
 - O `prisma format` realinhou as colunas do schema; o diff sem espaços é só a
   coluna nova.
+
+#### 4. Remover o eco do decline
+
+- O consumidor de resultados roteia `payment.declined` e `payment.failed` para
+  o mesmo `failOrder`, que só faz a transição para `FAILED` e não publica nada.
+  Não criei um método separado para decline porque o comportamento é idêntico.
+- `cancelByPaymentDeclined` e `cancelOrderInternal` sumiram; a lógica de
+  cancelamento ficou em `cancelByUser`, a única origem de `order.cancelled`.
+- `CancelReason.PAYMENT_DECLINED` foi removido. O enum ficou só com
+  `USER_REQUESTED`: mantive o campo `reason` no contrato para não quebrar
+  consumidores e para abrir espaço a outros motivos no futuro.
+- Efeito nas métricas: um decline passa a contar em `orders_failed_total` em
+  vez de `orders_cancelled_total{reason="PAYMENT_DECLINED"}`. Isso corrige a
+  semântica (o pedido fica `FAILED`); o dashboard não foi alterado.
+- Teste novo `order.consumer.spec.ts` cobre o roteamento dos três resultados
+  de pagamento, já que a mudança está no consumidor.
