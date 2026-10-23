@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
@@ -35,12 +36,17 @@ export class OrdersService {
   }
 
   async createOrder(createOrderDto: CreateOrderDto) {
-    const event = new CreateOrderRequestedEvent({
-      userId: createOrderDto.userId,
-      total: createOrderDto.total,
-    });
-
+    const orderId = randomUUID();
     const correlationId = CorrelationIdService.getId();
+
+    const event = new CreateOrderRequestedEvent(
+      {
+        orderId,
+        userId: createOrderDto.userId,
+        total: createOrderDto.total,
+      },
+      correlationId,
+    );
 
     await this.AmqpConnection.publish(
       Exchanges.ORDERS,
@@ -52,6 +58,7 @@ export class OrdersService {
     );
 
     return {
+      orderId,
       message: 'Order creation request accepted',
       status: 'PENDING',
     };
