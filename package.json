@@ -31,6 +31,7 @@
     "docker:logs": "docker-compose logs -f",
     "docker:restart": "docker-compose restart",
     "docker:clean": "docker-compose down -v",
+    "traffic": "node scripts/generate-traffic.mjs",
     "lint": "eslint \"{apps,libs}/**/*.{ts,js}\" --fix",
     "lint:check": "eslint \"{apps,libs}/**/*.{ts,js}\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
