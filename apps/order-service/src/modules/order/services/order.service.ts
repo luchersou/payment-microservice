@@ -1,11 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import {
-  Order,
-  OrderStatus,
-  Prisma,
-} from '@order/prisma/generated/prisma/client';
+import type { Order } from '@order/prisma/generated/prisma/client';
+import { OrderStatus } from '@order/prisma/generated/prisma/enums';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
@@ -21,8 +18,21 @@ import {
 } from '@contracts/order-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
+import { sourceStatusesFor } from '../domain/order-state-machine';
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
+
+/**
+ * Thrown when a cancel request arrives before the order is persisted
+ * (the gateway returns the orderId before the order is created).
+ * The retry error handler redelivers the message later.
+ */
+export class OrderNotFoundYetError extends Error {
+  constructor(orderId: string) {
+    super(`Order ${orderId} not found yet`);
+    this.name = OrderNotFoundYetError.name;
+  }
+}
 
 @Injectable()
 export class OrderService {
@@ -78,23 +88,35 @@ export class OrderService {
   // COMMANDS
   // ─────────────────────────────────────────────
 
+  /**
+   * Idempotent on payload.orderId: a redelivered request reuses the
+   * existing order and republishes OrderCreated while it is still pending,
+   * covering the case where the previous attempt persisted but failed to
+   * publish. The payment service is idempotent on orderId.
+   */
   async createOrder(payload: CreateOrderRequestedPayload) {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.CREATE_ORDER_REQUEST_DURATION,
     );
 
     try {
-      const order = await this.prisma.order.create({
-        data: {
-          id: randomUUID(),
-          userId: payload.userId,
-          total: payload.total,
-          status: OrderStatus.PENDING_PAYMENT,
-        },
-      });
+      // Fallback for requests published before the gateway sent orderId
+      const orderId = payload.orderId ?? randomUUID();
+      const { order, created } = await this.findOrCreateOrder(orderId, payload);
 
-      this.logger.log(`✅ Order ${order.id} persisted`);
-      this.metrics.incrementOrdersCreated();
+      if (created) {
+        this.logger.log(`✅ Order ${order.id} persisted`);
+        this.metrics.incrementOrdersCreated();
+      } else {
+        this.logger.warn(`⚠️ Order ${order.id} already exists (redelivery)`);
+      }
+
+      if (order.status !== OrderStatus.PENDING_PAYMENT) {
+        this.logger.log(
+          `ℹ️ Order ${order.id} is ${order.status}, OrderCreated not republished`,
+        );
+        return order;
+      }
 
       const correlationId = CorrelationIdService.getId();
 
@@ -119,9 +141,10 @@ export class OrderService {
       MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
     );
     try {
-      this.logger.log(`✅ Completing order ${orderId}`);
-
-      const order = await this.waitForOrder(orderId);
+      const { order, changed } = await this.transition(
+        orderId,
+        OrderStatus.PAID,
+      );
 
       if (!order) {
         this.logger.warn(
@@ -130,27 +153,18 @@ export class OrderService {
         return;
       }
 
-      if (order.status === OrderStatus.PAID) {
+      if (changed) {
+        this.logger.log(`✅ Order ${orderId} marked as PAID`);
+        this.metrics.incrementOrdersCompleted();
+      } else if (order.status === OrderStatus.PAID) {
         this.logger.log(`✅ Order ${orderId} already paid. Skipping.`);
-        return order;
-      }
-
-      if (order.status !== OrderStatus.PENDING_PAYMENT) {
+      } else {
         this.logger.warn(
           `⚠️ Cannot complete order ${orderId} with status ${order.status}`,
         );
-        return;
       }
 
-      const updated = await this.prisma.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.PAID },
-      });
-
-      this.logger.log(`✅ Order ${orderId} marked as PAID`);
-      this.metrics.incrementOrdersCompleted();
-
-      return updated;
+      return order;
     } finally {
       endTimer();
     }
@@ -169,27 +183,28 @@ export class OrderService {
       MetricNames.ORDER_PAYMENT_RESULT_PROCESSING_DURATION,
     );
     try {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
-      });
+      const { order, changed } = await this.transition(
+        orderId,
+        OrderStatus.FAILED,
+      );
 
       if (!order) {
         this.logger.warn(
-          `⚠️ Order ${orderId} not found. Ignoring PaymentDeclined.`,
+          `⚠️ Order ${orderId} not found. Ignoring PaymentFailed.`,
         );
         return;
       }
 
-      if (order.status === OrderStatus.FAILED) {
-        return;
+      if (changed) {
+        this.logger.warn(`⚠️ Order ${orderId} marked as FAILED`);
+        this.metrics.incrementOrdersFailed();
+      } else if (order.status !== OrderStatus.FAILED) {
+        this.logger.warn(
+          `⚠️ Cannot fail order ${orderId} with status ${order.status}`,
+        );
       }
 
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.FAILED },
-      });
-
-      this.metrics.incrementOrdersFailed();
+      return order;
     } finally {
       endTimer();
     }
@@ -237,56 +252,55 @@ export class OrderService {
     try {
       this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
 
-      const order = await this.waitForOrder(orderId);
-
-      if (!order) {
-        this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-        return;
-      }
-
-      const newStatus =
+      const target =
         reason === CancelReason.PAYMENT_DECLINED
           ? OrderStatus.FAILED
           : OrderStatus.CANCELLED;
 
-      try {
-        const updatedOrder = await this.prisma.order.update({
-          where: {
-            id: orderId,
-            status: { notIn: [OrderStatus.CANCELLED, OrderStatus.FAILED] },
-          },
-          data: { status: newStatus },
-        });
+      const { order, changed } = await this.transition(orderId, target);
 
-        const correlationId = CorrelationIdService.getId();
-
-        await this.amqpConnection.publish(
-          Exchanges.ORDERS,
-          RoutingKeys.ORDER_CANCELLED,
-          new OrderCancelledEvent(
-            { orderId: updatedOrder.id, reason, cancelledAt: new Date() },
-            correlationId,
-          ),
-          { correlationId },
-        );
-
-        this.logger.log(
-          `✅ Order ${orderId} updated to ${newStatus} successfully`,
-        );
-
-        this.metrics.incrementOrdersCancelled(reason);
-
-        return updatedOrder;
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2025'
-        ) {
-          this.logger.warn(`⚠️ Order ${orderId} already finalized. Skipping.`);
-          return;
+      if (!order) {
+        if (reason === CancelReason.USER_REQUESTED) {
+          throw new OrderNotFoundYetError(orderId);
         }
-        throw error;
+        this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
+        return;
       }
+
+      if (!changed && order.status !== target) {
+        this.logger.warn(
+          `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
+        );
+        return;
+      }
+
+      // Published when the transition happened now, and republished when the
+      // order is already in the target status (redelivery after a failed
+      // publish). The payment service handles OrderCancelled idempotently.
+      const correlationId = CorrelationIdService.getId();
+
+      await this.amqpConnection.publish(
+        Exchanges.ORDERS,
+        RoutingKeys.ORDER_CANCELLED,
+        new OrderCancelledEvent(
+          { orderId: order.id, reason, cancelledAt: order.updatedAt },
+          correlationId,
+        ),
+        { correlationId },
+      );
+
+      if (changed) {
+        this.logger.log(
+          `✅ Order ${orderId} updated to ${target} successfully`,
+        );
+        this.metrics.incrementOrdersCancelled(reason);
+      } else {
+        this.logger.warn(
+          `⚠️ Order ${orderId} already ${target}. OrderCancelled republished.`,
+        );
+      }
+
+      return order;
     } finally {
       endTimer();
     }
@@ -295,6 +309,51 @@ export class OrderService {
   // ─────────────────────────────────────────────
   // PRIVATE — HELPERS
   // ─────────────────────────────────────────────
+
+  /**
+   * Atomic conditional update: only moves the order to `to` if its current
+   * status allows it (see ORDER_TRANSITIONS), so concurrent events cannot
+   * overwrite each other. Returns the current order and whether it changed.
+   */
+  private async transition(
+    orderId: string,
+    to: OrderStatus,
+  ): Promise<{ order: Order | null; changed: boolean }> {
+    const { count } = await this.prisma.order.updateMany({
+      where: { id: orderId, status: { in: sourceStatusesFor(to) } },
+      data: { status: to },
+    });
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    return { order, changed: count === 1 };
+  }
+
+  private async findOrCreateOrder(
+    orderId: string,
+    payload: CreateOrderRequestedPayload,
+  ): Promise<{ order: Order; created: boolean }> {
+    try {
+      const order = await this.prisma.order.create({
+        data: {
+          id: orderId,
+          userId: payload.userId,
+          total: payload.total,
+          status: OrderStatus.PENDING_PAYMENT,
+        },
+      });
+      return { order, created: true };
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      const order = await this.prisma.order.findUniqueOrThrow({
+        where: { id: orderId },
+      });
+      return { order, created: false };
+    }
+  }
 
   private toResponseDto(order: Order): OrderResponseDto {
     return {
@@ -306,31 +365,12 @@ export class OrderService {
       updatedAt: order.updatedAt,
     };
   }
+}
 
-  private async waitForOrder(
-    orderId: string,
-    maxRetries = 5,
-    delayMs = 300,
-  ): Promise<Order | null> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
-      });
-
-      if (order) {
-        if (attempt > 1) {
-          this.logger.log(
-            `✅ Order ${orderId} found on retry ${attempt}/${maxRetries}`,
-          );
-        }
-        return order;
-      }
-
-      if (attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-
-    return null;
-  }
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
