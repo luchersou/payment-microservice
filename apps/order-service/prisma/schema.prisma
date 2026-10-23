@@ -1,6 +1,10 @@
 generator client {
   provider = "prisma-client"
   output   = "./generated/prisma"
+  // Explicit: otherwise inferred from tsconfig, and module=node16 yields ESM
+  // output (import.meta) that crashes the CommonJS build at runtime.
+  moduleFormat        = "cjs"
+  importFileExtension = ""
 }
 
 datasource db {
