@@ -1,7 +1,5 @@
 import { createEnvValidator, DatabaseEnvironment } from './env.validation';
 
-import 'reflect-metadata';
-
 class TestEnvironment extends DatabaseEnvironment {
   PORT = 3001;
 }

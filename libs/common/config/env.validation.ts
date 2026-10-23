@@ -1,6 +1,16 @@
 import { plainToInstance } from 'class-transformer';
-import { IsInt, IsString, Matches, Max, Min } from 'class-validator';
-import { validateSync } from 'class-validator';
+import {
+  IsInt,
+  IsString,
+  Matches,
+  Max,
+  Min,
+  validateSync,
+} from 'class-validator';
+
+// Implicit type conversion reads design:type metadata, which only exists
+// if reflect-metadata is loaded before the classes below are decorated.
+import 'reflect-metadata';
 
 /** Variables shared by every service */
 export class BaseEnvironment {
