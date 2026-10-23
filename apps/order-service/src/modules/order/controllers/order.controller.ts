@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
 import { OrderService } from '../services/order.service';
@@ -19,7 +19,7 @@ export class OrdersController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     const order = await this.orderService.findOne(id);
     return order;
   }
