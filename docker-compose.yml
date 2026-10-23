@@ -64,7 +64,8 @@ services:
       retries: 5
       start_period: 20s
     ports:
-      - "3000:3000"
+      # Host port overridable when 3000 is taken: API_GATEWAY_PORT=3010 docker compose up
+      - "${API_GATEWAY_PORT:-3000}:3000"
     environment:
       PORT: 3000
       ORDER_SERVICE_URL: http://order-service:3001

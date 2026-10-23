@@ -197,7 +197,7 @@ payment-microservices/
 1. **Clone the repository**
 ```bash
    git clone https://github.com/luchersou/payment-microservice.git
-   cd payment-microservices
+   cd payment-microservice
 ```
 
 2. **Install dependencies**
@@ -207,8 +207,41 @@ payment-microservices/
 
 3. **Start services with Docker Compose**
 ```bash
-   docker-compose up --build
+   docker compose up --build
 ```
+   If port 3000 is already in use, pick another host port for the gateway:
+```bash
+   API_GATEWAY_PORT=3010 docker compose up --build
+```
+
+---
+
+## 📊 Observability
+
+The stack ships with Prometheus and a provisioned Grafana dashboard. Nothing to import.
+
+| Tool | URL | Credentials |
+|------|-----|-------------|
+| **Grafana** (dashboard *Microservices → Microservices Overview*) | http://localhost:3003 | `admin` / `admin123` |
+| **Prometheus** (Status → Targets) | http://localhost:9090 | — |
+| **RabbitMQ Management** | http://localhost:15672 | `admin` / `admin123` |
+
+**Generate traffic** so the panels have data (needs the stack running):
+```bash
+npm run traffic                          # ~2 orders/s for 2 minutes
+npm run traffic -- --duration 60 --rate 5
+GATEWAY_URL=http://localhost:3010/api npm run traffic   # custom gateway port
+```
+
+The dashboard has five sections:
+
+- **Overview**: services up, orders created, payment approval rate, gateway 5xx rate, retries and dead-lettered messages
+- **Business**: orders and payments per second by outcome
+- **API Gateway (HTTP)**: requests by route, responses by status code, p95 latency
+- **Messaging (RabbitMQ)**: p95 processing time per event, queue depth (including `*.retry` and `*.dlq`), failed messages by outcome
+- **Runtime (Node.js)**: CPU, memory and event loop lag per service
+
+Scraped endpoints: `api-gateway:3000/api/metrics`, `order-service:3001/metrics`, `payment-service:3002/metrics`, and RabbitMQ's built-in exporter (`rabbitmq:15692/metrics/detailed`). Health checks: `/api/health` (gateway) and `/health` (services).
 
 ---
 
@@ -304,11 +337,12 @@ curl -X POST http://localhost:3000/api/orders \
   }'
 ```
 
-**Response:**
+**Response:** `202 Accepted`
 ```json
 {
+    "orderId": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
     "message": "Order creation request accepted",
-    "status": "PENDING_PAYMENT"
+    "status": "PENDING"
 }
 ```
 

@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 
 import { MessageErrorHandler } from '@golevelup/nestjs-rabbitmq';
 import { Channel, ConsumeMessage, MessagePropertyHeaders } from 'amqplib';
+import { Counter, register } from 'prom-client';
 
 import { Exchanges } from '../constants';
 
@@ -21,6 +22,26 @@ export interface RetryPolicy {
 }
 
 export const retryQueueName = (queue: string) => `${queue}.retry`;
+
+const RETRIES_METRIC = 'rabbitmq_message_failures_total';
+
+/**
+ * Failed message handling outcomes per queue: `retry` (scheduled for
+ * redelivery) or `dead_letter` (retries exhausted, sent to the DLQ).
+ * Registered on the default registry, which every service exposes.
+ */
+function failuresCounter(): Counter<'queue' | 'outcome'> {
+  return (
+    (register.getSingleMetric(RETRIES_METRIC) as
+      | Counter<'queue' | 'outcome'>
+      | undefined) ??
+    new Counter({
+      name: RETRIES_METRIC,
+      help: 'Failed RabbitMQ messages by queue and outcome (retry, dead_letter)',
+      labelNames: ['queue', 'outcome'],
+    })
+  );
+}
 
 /**
  * Error handler with bounded, delayed retries.
@@ -67,6 +88,7 @@ export function createRetryErrorHandler({
           [LAST_ERROR_HEADER]: reason,
         });
 
+        failuresCounter().inc({ queue, outcome: 'retry' });
         logger.warn(
           `[${correlationId}] 🔁 ${queue}: retry ${attempt + 1}/${maxRetries} in ${delayMs}ms — ${reason}`,
         );
@@ -76,6 +98,7 @@ export function createRetryErrorHandler({
           [LAST_ERROR_HEADER]: reason,
         });
 
+        failuresCounter().inc({ queue, outcome: 'dead_letter' });
         logger.error(
           `[${correlationId}] ☠️ ${queue}: retries exhausted (${maxRetries}), sent to ${dlq} — ${reason}`,
         );
