@@ -32,6 +32,8 @@
     "docker:restart": "docker-compose restart",
     "docker:clean": "docker-compose down -v",
     "lint": "eslint \"{apps,libs}/**/*.{ts,js}\" --fix",
+    "lint:check": "eslint \"{apps,libs}/**/*.{ts,js}\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
