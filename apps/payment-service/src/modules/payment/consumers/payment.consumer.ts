@@ -7,6 +7,8 @@ import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
 import { MetricNames } from '@common/metrics';
 import {
+  createRetryErrorHandler,
+  DLQ,
   Exchanges,
   PAYMENT_ORDER_CANCELLED_QUEUE_OPTIONS,
   PAYMENT_ORDER_CREATED_QUEUE_OPTIONS,
@@ -39,6 +41,10 @@ export class PaymentConsumer {
     routingKey: RoutingKeys.ORDER_CREATED,
     queue: Queues.PAYMENT_ORDER_CREATED,
     queueOptions: PAYMENT_ORDER_CREATED_QUEUE_OPTIONS,
+    errorHandler: createRetryErrorHandler({
+      queue: Queues.PAYMENT_ORDER_CREATED,
+      dlq: DLQ.PAYMENT_ORDER_CREATED,
+    }),
   })
   async handleOrderCreated(event: OrderCreatedEvent, amqpMsg: ConsumeMessage) {
     await runWithCorrelation(amqpMsg, async () => {
@@ -70,6 +76,10 @@ export class PaymentConsumer {
     routingKey: RoutingKeys.ORDER_CANCELLED,
     queue: Queues.PAYMENT_ORDER_CANCELLED,
     queueOptions: PAYMENT_ORDER_CANCELLED_QUEUE_OPTIONS,
+    errorHandler: createRetryErrorHandler({
+      queue: Queues.PAYMENT_ORDER_CANCELLED,
+      dlq: DLQ.PAYMENT_ORDER_CANCELLED,
+    }),
   })
   async handleOrderCancelled(
     event: OrderCancelledEvent,

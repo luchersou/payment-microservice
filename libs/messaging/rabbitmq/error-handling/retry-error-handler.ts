@@ -1,0 +1,146 @@
+import { Logger } from '@nestjs/common';
+
+import { MessageErrorHandler } from '@golevelup/nestjs-rabbitmq';
+import { Channel, ConsumeMessage, MessagePropertyHeaders } from 'amqplib';
+
+import { Exchanges } from '../constants';
+
+export const RETRY_COUNT_HEADER = 'x-retry-count';
+export const LAST_ERROR_HEADER = 'x-last-error';
+
+export const DEFAULT_MAX_RETRIES = 3;
+export const DEFAULT_RETRY_DELAY_MS = 5000;
+
+export interface RetryPolicy {
+  /** Queue the consumer reads from */
+  queue: string;
+  /** DLQ routing key (bound on the DLX) that receives exhausted messages */
+  dlq: string;
+  maxRetries?: number;
+  delayMs?: number;
+}
+
+export const retryQueueName = (queue: string) => `${queue}.retry`;
+
+/**
+ * Error handler with bounded, delayed retries.
+ *
+ * - While `x-retry-count < maxRetries`: the message is republished to
+ *   `<queue>.retry`, a queue with a TTL whose dead-letter target is the
+ *   original queue (via the default exchange). After `delayMs` it comes back.
+ * - Once retries are exhausted: the message is published to the DLX with the
+ *   DLQ routing key and the last error in the `x-last-error` header.
+ *
+ * The original message is only acked after the republish succeeds. If the
+ * republish itself throws, the message is rejected without requeue so the
+ * queue's own `x-dead-letter-exchange` still routes it to the DLQ.
+ */
+export function createRetryErrorHandler({
+  queue,
+  dlq,
+  maxRetries = DEFAULT_MAX_RETRIES,
+  delayMs = DEFAULT_RETRY_DELAY_MS,
+}: RetryPolicy): MessageErrorHandler {
+  const logger = new Logger('RetryErrorHandler');
+  const retryQueue = retryQueueName(queue);
+
+  return async (channel: Channel, msg: ConsumeMessage, error: unknown) => {
+    const headers: MessagePropertyHeaders = msg.properties.headers ?? {};
+    const attempt = Number(headers[RETRY_COUNT_HEADER] ?? 0);
+    const reason = error instanceof Error ? error.message : String(error);
+    const correlationId = msg.properties.correlationId as string | undefined;
+
+    try {
+      if (attempt < maxRetries) {
+        await channel.assertQueue(retryQueue, {
+          durable: true,
+          arguments: {
+            'x-message-ttl': delayMs,
+            'x-dead-letter-exchange': '',
+            'x-dead-letter-routing-key': queue,
+          },
+        });
+
+        republish(channel, msg, '', retryQueue, {
+          ...headers,
+          [RETRY_COUNT_HEADER]: attempt + 1,
+          [LAST_ERROR_HEADER]: reason,
+        });
+
+        logger.warn(
+          `[${correlationId}] 🔁 ${queue}: retry ${attempt + 1}/${maxRetries} in ${delayMs}ms — ${reason}`,
+        );
+      } else {
+        republish(channel, msg, Exchanges.DLX, dlq, {
+          ...headers,
+          [LAST_ERROR_HEADER]: reason,
+        });
+
+        logger.error(
+          `[${correlationId}] ☠️ ${queue}: retries exhausted (${maxRetries}), sent to ${dlq} — ${reason}`,
+        );
+      }
+
+      channel.ack(msg);
+    } catch (republishError) {
+      logger.error(
+        `[${correlationId}] ❌ ${queue}: could not republish failed message, rejecting to DLX`,
+        republishError instanceof Error
+          ? republishError.stack
+          : String(republishError),
+      );
+      channel.nack(msg, false, false);
+    }
+  };
+}
+
+function republish(
+  channel: Channel,
+  msg: ConsumeMessage,
+  exchange: string,
+  routingKey: string,
+  headers: MessagePropertyHeaders,
+) {
+  const { properties } = msg;
+
+  channel.publish(exchange, routingKey, msg.content, {
+    headers,
+    persistent: true,
+    contentType: properties.contentType as string | undefined,
+    contentEncoding: properties.contentEncoding as string | undefined,
+    correlationId: properties.correlationId as string | undefined,
+    messageId: properties.messageId as string | undefined,
+    timestamp: properties.timestamp as number | undefined,
+    type: properties.type as string | undefined,
+    appId: properties.appId as string | undefined,
+  });
+}
+
+/**
+ * Error handler for DLQ consumers: if persisting the dead letter fails
+ * (e.g. database down), requeue after a delay instead of dropping it.
+ */
+export function createDelayedRequeueErrorHandler(
+  delayMs = DEFAULT_RETRY_DELAY_MS,
+): MessageErrorHandler {
+  const logger = new Logger('DlqErrorHandler');
+
+  return async (channel: Channel, msg: ConsumeMessage, error: unknown) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `❌ Failed to handle dead letter, requeueing in ${delayMs}ms — ${reason}`,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    channel.nack(msg, false, true);
+  };
+}
+
+/** Reason to store for a dead letter: our header first, broker x-death second */
+export function getDeadLetterReason(msg: ConsumeMessage): string | undefined {
+  const headers = msg.properties.headers ?? {};
+  const lastError = headers[LAST_ERROR_HEADER] as string | undefined;
+  const xDeath = headers['x-death'] as Array<{ reason?: string }> | undefined;
+
+  return lastError ?? xDeath?.[0]?.reason;
+}

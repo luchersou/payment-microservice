@@ -6,7 +6,12 @@ import { ConsumeMessage } from 'amqplib';
 import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
 import { MetricNames } from '@common/metrics';
-import { DLQ, Exchanges } from '@messaging/rabbitmq';
+import {
+  createDelayedRequeueErrorHandler,
+  DLQ,
+  Exchanges,
+  getDeadLetterReason,
+} from '@messaging/rabbitmq';
 import {
   CreateOrderRequestedEvent,
   OrderCancelRequestedEvent,
@@ -43,6 +48,7 @@ export class OrderDlqConsumer {
     routingKey: DLQ.ORDER_CREATE,
     queue: DLQ.ORDER_CREATE,
     queueOptions: { durable: true },
+    errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handleCreateOrderDlq(
     event: CreateOrderRequestedEvent,
@@ -65,12 +71,13 @@ export class OrderDlqConsumer {
           queue: DLQ.ORDER_CREATE,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,
-          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+          error: getDeadLetterReason(amqpMsg),
         });
       } catch (error) {
         this.logger.error(
           `❌ Failed to process DLQ message for ${DLQ.ORDER_CREATE}`,
         );
+        throw error;
       } finally {
         endTimer();
       }
@@ -86,6 +93,7 @@ export class OrderDlqConsumer {
     routingKey: DLQ.ORDER_CANCEL_REQUESTED,
     queue: DLQ.ORDER_CANCEL_REQUESTED,
     queueOptions: { durable: true },
+    errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handleCancelRequestedDlq(
     event: OrderCancelRequestedEvent,
@@ -110,12 +118,13 @@ export class OrderDlqConsumer {
           queue: DLQ.ORDER_CANCEL_REQUESTED,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,
-          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+          error: getDeadLetterReason(amqpMsg),
         });
       } catch (error) {
         this.logger.error(
           `❌ Failed to process DLQ message for ${DLQ.ORDER_CANCEL_REQUESTED}`,
         );
+        throw error;
       } finally {
         endTimer();
       }
@@ -131,6 +140,7 @@ export class OrderDlqConsumer {
     routingKey: DLQ.ORDER_PAYMENT_RESULT,
     queue: DLQ.ORDER_PAYMENT_RESULT,
     queueOptions: { durable: true },
+    errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handlePaymentResultDlq(event: PaymentEvents, amqpMsg: ConsumeMessage) {
     await runWithCorrelation(amqpMsg, async () => {
@@ -150,12 +160,13 @@ export class OrderDlqConsumer {
           queue: DLQ.ORDER_PAYMENT_RESULT,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,
-          error: amqpMsg.properties.headers?.['x-death']?.[0]?.reason,
+          error: getDeadLetterReason(amqpMsg),
         });
       } catch (error) {
         this.logger.error(
           `❌ Failed to process DLQ message for ${DLQ.ORDER_PAYMENT_RESULT}`,
         );
+        throw error;
       } finally {
         endTimer();
       }
