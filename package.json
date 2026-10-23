@@ -92,15 +92,29 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/apps",
+      "<rootDir>/libs"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "moduleNameMapper": {
+      "^@messaging/(.*)$": "<rootDir>/libs/messaging/$1",
+      "^@contracts/(.*)$": "<rootDir>/libs/contracts/$1",
+      "^@common/(.*)$": "<rootDir>/libs/common/$1",
+      "^@order/(.*)$": "<rootDir>/apps/order-service/$1",
+      "^@payment/(.*)$": "<rootDir>/apps/payment-service/$1"
+    },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "apps/*/src/**/*.ts",
+      "libs/**/*.ts",
+      "!**/index.ts",
+      "!**/main.ts"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "./coverage",
     "testEnvironment": "node"
   }
 }
