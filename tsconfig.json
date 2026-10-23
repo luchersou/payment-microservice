@@ -2,16 +2,15 @@
   "compilerOptions": {
     "target": "ES2021",
 
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "node16",
+    "moduleResolution": "node16",
 
-    "baseUrl": ".",
     "paths": {
-      "@messaging/*": ["libs/messaging/*"],
-      "@contracts/*": ["libs/contracts/*"],
-      "@common/*": ["libs/common/*"],
-      "@order/*": ["apps/order-service/*"],
-      "@payment/*": ["apps/payment-service/*"]
+      "@messaging/*": ["./libs/messaging/*"],
+      "@contracts/*": ["./libs/contracts/*"],
+      "@common/*": ["./libs/common/*"],
+      "@order/*": ["./apps/order-service/*"],
+      "@payment/*": ["./apps/payment-service/*"]
     },
 
     "outDir": "./dist",
