@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
-import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
 import {
   CancelReason,
   CreateOrderRequestedPayload,
@@ -114,14 +114,14 @@ export class OrderService {
 
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
       new OrderCreatedEvent(
         { orderId: order.id, userId: order.userId, total: order.total },
         correlationId,
       ),
-      { correlationId },
     );
 
     return order;
@@ -246,14 +246,14 @@ export class OrderService {
     // publish). The payment service handles OrderCancelled idempotently.
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCELLED,
       new OrderCancelledEvent(
         { orderId: order.id, reason, cancelledAt: order.updatedAt },
         correlationId,
       ),
-      { correlationId },
     );
 
     if (changed) {

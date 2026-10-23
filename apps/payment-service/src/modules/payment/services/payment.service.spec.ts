@@ -141,7 +141,7 @@ describe('PaymentService', () => {
         expect.objectContaining({
           payload: expect.objectContaining({ orderId: 'order-1' }),
         }),
-        expect.anything(),
+        expect.objectContaining({ persistent: true }),
       );
     });
 

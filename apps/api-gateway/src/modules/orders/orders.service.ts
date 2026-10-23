@@ -6,7 +6,7 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
-import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
 import {
   CreateOrderRequestedEvent,
   OrderCancelRequestedEvent,
@@ -48,13 +48,11 @@ export class OrdersService {
       correlationId,
     );
 
-    await this.AmqpConnection.publish(
+    await publishEvent(
+      this.AmqpConnection,
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATE_REQUESTED,
       event,
-      {
-        correlationId,
-      },
     );
 
     return {
@@ -69,15 +67,11 @@ export class OrdersService {
       orderId,
     });
 
-    const correlationId = CorrelationIdService.getId();
-
-    await this.AmqpConnection.publish(
+    await publishEvent(
+      this.AmqpConnection,
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CANCEL_REQUESTED,
       event,
-      {
-        correlationId,
-      },
     );
 
     return {

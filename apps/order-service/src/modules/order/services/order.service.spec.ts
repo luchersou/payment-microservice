@@ -117,7 +117,7 @@ describe('OrderService', () => {
         expect.objectContaining({
           payload: { orderId: 'order-1', userId: 'user-1', total: 100 },
         }),
-        expect.anything(),
+        expect.objectContaining({ persistent: true }),
       );
     });
 

@@ -8,7 +8,7 @@ import { PrismaService } from '@payment/prisma/prisma.service';
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
 import { MetricNames } from '@common/metrics';
-import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
 import {
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -377,21 +377,22 @@ export class PaymentService {
   private async publishApproved(payment: Payment) {
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_APPROVED,
       new PaymentApprovedEvent(
         { orderId: payment.orderId, transactionId: payment.id },
         correlationId,
       ),
-      { correlationId },
     );
   }
 
   private async publishDeclined(payment: Payment, reason?: string) {
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_DECLINED,
       new PaymentDeclinedEvent(
@@ -401,21 +402,20 @@ export class PaymentService {
         },
         correlationId,
       ),
-      { correlationId },
     );
   }
 
   private async publishFailed(payment: Payment, error?: string) {
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_FAILED,
       new PaymentFailedEvent(
         { orderId: payment.orderId, error: error ?? 'Unknown error' },
         correlationId,
       ),
-      { correlationId },
     );
   }
 
