@@ -7,6 +7,8 @@ import { CorrelationLogger } from '@common/logger';
 import { runWithCorrelation } from '@common/messaging';
 import { MetricNames } from '@common/metrics';
 import {
+  createRetryErrorHandler,
+  DLQ,
   Exchanges,
   ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS,
   ORDER_CREATE_QUEUE_OPTIONS,
@@ -51,6 +53,10 @@ export class OrderConsumer {
     routingKey: RoutingKeys.ORDER_CREATE_REQUESTED,
     queue: Queues.ORDER_CREATE,
     queueOptions: ORDER_CREATE_QUEUE_OPTIONS,
+    errorHandler: createRetryErrorHandler({
+      queue: Queues.ORDER_CREATE,
+      dlq: DLQ.ORDER_CREATE,
+    }),
   })
   async handleCreateOrderRequested(
     event: CreateOrderRequestedEvent,
@@ -87,6 +93,10 @@ export class OrderConsumer {
     routingKey: RoutingKeys.ORDER_CANCEL_REQUESTED,
     queue: Queues.ORDER_CANCEL_REQUESTED,
     queueOptions: ORDER_CANCEL_REQUESTED_QUEUE_OPTIONS,
+    errorHandler: createRetryErrorHandler({
+      queue: Queues.ORDER_CANCEL_REQUESTED,
+      dlq: DLQ.ORDER_CANCEL_REQUESTED,
+    }),
   })
   async handleOrderCancelRequested(
     event: OrderCancelRequestedEvent,
@@ -127,6 +137,10 @@ export class OrderConsumer {
     ],
     queue: Queues.ORDER_PAYMENT_RESULT,
     queueOptions: ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
+    errorHandler: createRetryErrorHandler({
+      queue: Queues.ORDER_PAYMENT_RESULT,
+      dlq: DLQ.ORDER_PAYMENT_RESULT,
+    }),
   })
   async handlePaymentEvents(event: PaymentEvents, amqpMsg: ConsumeMessage) {
     await runWithCorrelation(amqpMsg, async () => {

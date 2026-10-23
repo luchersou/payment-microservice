@@ -1,4 +1,7 @@
-import { RabbitMQConfig } from '@golevelup/nestjs-rabbitmq';
+import {
+  MessageHandlerErrorBehavior,
+  RabbitMQConfig,
+} from '@golevelup/nestjs-rabbitmq';
 
 import { Exchanges } from '../constants';
 
@@ -6,6 +9,13 @@ export const rabbitmqBaseConfig: RabbitMQConfig = {
   uri: process.env.RABBITMQ_URL || 'amqp://localhost:5672',
 
   connectionInitOptions: { wait: false },
+
+  /**
+   * Safety net for subscribers without an explicit errorHandler: the library
+   * default is REQUEUE, which loops poison messages forever and never reaches
+   * the DLX. NACK (no requeue) lets the queue's dead-letter config take over.
+   */
+  defaultSubscribeErrorBehavior: MessageHandlerErrorBehavior.NACK,
 
   channels: {
     'channel-1': {
