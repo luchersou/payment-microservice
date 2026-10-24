@@ -28,7 +28,9 @@ import {
 import { PaymentEventTypes } from '@contracts/payment-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
-import { OrderService } from '../services/order.service';
+import { ApplyPaymentResultUseCase } from '../application/apply-payment-result.use-case';
+import { CancelOrderUseCase } from '../application/cancel-order.use-case';
+import { CreateOrderUseCase } from '../application/create-order.use-case';
 
 type PaymentEvents =
   | PaymentApprovedEvent
@@ -40,7 +42,9 @@ export class OrderConsumer {
   private readonly logger = new CorrelationLogger(OrderConsumer.name);
 
   constructor(
-    private readonly orderService: OrderService,
+    private readonly createOrder: CreateOrderUseCase,
+    private readonly cancelOrder: CancelOrderUseCase,
+    private readonly applyPaymentResult: ApplyPaymentResultUseCase,
     private readonly metrics: OrderMetricsService,
   ) {}
 
@@ -72,7 +76,7 @@ export class OrderConsumer {
       );
 
       try {
-        await this.orderService.createOrder(event.payload);
+        await this.createOrder.execute(event.payload);
       } catch (error) {
         this.logger.error(
           `❌ Error processing CreateOrderRequested for user ${event.payload.userId}`,
@@ -112,7 +116,7 @@ export class OrderConsumer {
       );
 
       try {
-        await this.orderService.cancelByUser(event.payload.orderId);
+        await this.cancelOrder.execute(event.payload.orderId);
       } catch (error) {
         this.logger.error(
           `❌ Error processing OrderCancelRequested for order ${event.payload.orderId}`,
@@ -155,14 +159,17 @@ export class OrderConsumer {
       try {
         switch (event.eventType) {
           case PaymentEventTypes.PAYMENT_APPROVED:
-            await this.orderService.completeOrder(orderId);
+            await this.applyPaymentResult.execute(orderId, 'approved');
             break;
 
           // Declined and failed payments both fail the order without
           // publishing anything: OrderCancelled is only for user cancels
           case PaymentEventTypes.PAYMENT_DECLINED:
+            await this.applyPaymentResult.execute(orderId, 'declined');
+            break;
+
           case PaymentEventTypes.PAYMENT_FAILED:
-            await this.orderService.failOrder(orderId);
+            await this.applyPaymentResult.execute(orderId, 'failed');
             break;
 
           default:

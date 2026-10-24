@@ -1,6 +1,5 @@
-import { OrderStatus } from '@order/prisma/generated/prisma/enums';
-
 import { sourceStatusesFor } from './order-state-machine';
+import { OrderStatus } from './order-status';
 
 describe('sourceStatusesFor', () => {
   it('only allows PAID from PENDING_PAYMENT', () => {
