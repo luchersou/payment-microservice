@@ -33,6 +33,29 @@ export class DatabaseEnvironment extends BaseEnvironment {
     message: 'DATABASE_URL must be a postgres:// or postgresql:// URL',
   })
   DATABASE_URL: string;
+
+  /** How often the outbox relay looks for unpublished events */
+  @IsInt()
+  @Min(100)
+  OUTBOX_POLL_INTERVAL_MS = 1000;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_BATCH_SIZE = 100;
+
+  @IsInt()
+  @Min(100)
+  OUTBOX_PUBLISH_TIMEOUT_MS = 5000;
+
+  /** How often to look for records stuck mid-saga */
+  @IsInt()
+  @Min(1000)
+  RECONCILIATION_INTERVAL_MS = 60_000;
+
+  /** How long a record may stay PROCESSING / PENDING_PAYMENT before it counts as stuck */
+  @IsInt()
+  @Min(1)
+  RECONCILIATION_STUCK_AFTER_MINUTES = 5;
 }
 
 /**

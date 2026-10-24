@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import type { Payment } from '@payment/prisma/generated/prisma/client';
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 import { PrismaService } from '@payment/prisma/prisma.service';
@@ -8,7 +7,8 @@ import { PrismaService } from '@payment/prisma/prisma.service';
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
 import { MetricNames } from '@common/metrics';
-import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
+import { OutboxRecord, toOutboxRecord } from '@messaging/outbox';
+import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -42,7 +42,6 @@ export class PaymentService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly amqpConnection: AmqpConnection,
     private readonly metrics: PaymentMetricsService,
   ) {}
 
@@ -124,8 +123,8 @@ export class PaymentService {
    * - existing PROCESSING payment (previous attempt crashed mid-way) → resume
    * - CANCELLED payment (tombstone: the order was cancelled first) → do
    *   nothing, the customer must not be charged
-   * - already decided payment (previous attempt failed to publish) →
-   *   republish its result; the order service handles results idempotently
+   * - already decided payment (redelivery) → do nothing: its result was
+   *   written to the outbox in the same transaction as the decision
    */
   async handleOrderCreated(payload: OrderCreatedPayload) {
     this.logger.log(`💳 Processing payment for order ${payload.orderId}`);
@@ -141,9 +140,8 @@ export class PaymentService {
 
     if (payment.status !== PaymentStatus.PROCESSING) {
       this.logger.warn(
-        `⚠️ Payment for order ${payload.orderId} already ${payment.status}, republishing result`,
+        `⚠️ Payment for order ${payload.orderId} already ${payment.status}, skipping`,
       );
-      await this.publishResult(payment);
       return;
     }
 
@@ -153,6 +151,18 @@ export class PaymentService {
       );
     }
 
+    await this.processPayment(payment);
+  }
+
+  /**
+   * Resumes a payment left in PROCESSING (its OrderCreated went to the DLQ,
+   * or the service died mid-charge). Safe to race with a consumer: every
+   * decision is a conditional update, so only one of them can win.
+   */
+  async resumePayment(payment: Payment) {
+    this.logger.warn(
+      `🔧 Resuming payment ${payment.id} stuck in PROCESSING for order ${payment.orderId}`,
+    );
     await this.processPayment(payment);
   }
 
@@ -269,9 +279,9 @@ export class PaymentService {
   private async processPayment(payment: Payment) {
     let result: { approved: boolean; reason?: string };
 
-    // Only gateway errors mark the payment as FAILED. Errors after the
-    // decision (DB, broker) propagate so the message is retried and the
-    // decided result is republished.
+    // Only gateway errors mark the payment as FAILED. A database error while
+    // recording the decision propagates: nothing was committed (status and
+    // outbox event are one transaction), so the retry resumes the payment.
     try {
       result = await this.simulatePaymentGateway();
     } catch (error) {
@@ -328,7 +338,14 @@ export class PaymentService {
     );
 
     try {
-      if (!(await this.transition(payment, PaymentStatus.APPROVED))) {
+      if (
+        !(await this.transition(
+          payment,
+          PaymentStatus.APPROVED,
+          {},
+          this.approvedEvent(payment),
+        ))
+      ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing (order cancelled?), not approving`,
         );
@@ -337,8 +354,6 @@ export class PaymentService {
 
       this.metrics.incrementPaymentsApproved();
       this.logger.log(`✅ Payment approved for order ${payment.orderId}`);
-
-      await this.publishApproved(payment);
     } finally {
       endTimer();
     }
@@ -352,9 +367,12 @@ export class PaymentService {
 
     try {
       if (
-        !(await this.transition(payment, PaymentStatus.DECLINED, {
-          failureReason,
-        }))
+        !(await this.transition(
+          payment,
+          PaymentStatus.DECLINED,
+          { failureReason },
+          this.declinedEvent(payment, failureReason),
+        ))
       ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing, not declining`,
@@ -364,8 +382,6 @@ export class PaymentService {
 
       this.metrics.incrementPaymentsDeclined(reason ?? 'insufficient_funds');
       this.logger.warn(`⚠️ Payment declined for order ${payment.orderId}`);
-
-      await this.publishDeclined({ ...payment, failureReason });
     } finally {
       endTimer();
     }
@@ -380,9 +396,12 @@ export class PaymentService {
 
     try {
       if (
-        !(await this.transition(payment, PaymentStatus.FAILED, {
-          failureReason,
-        }))
+        !(await this.transition(
+          payment,
+          PaymentStatus.FAILED,
+          { failureReason },
+          this.failedEvent(payment, failureReason),
+        ))
       ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing, not failing`,
@@ -392,79 +411,44 @@ export class PaymentService {
 
       this.metrics.incrementPaymentsFailed();
       this.logger.error(`❌ Payment failed for order ${payment.orderId}`);
-
-      await this.publishFailed({ ...payment, failureReason });
     } finally {
       endTimer();
     }
   }
 
   // ─────────────────────────────────────────────
-  // PRIVATE — PUBLISHING
+  // PRIVATE — OUTBOX EVENTS
   // ─────────────────────────────────────────────
 
-  private async publishResult(payment: Payment) {
-    switch (payment.status) {
-      case PaymentStatus.APPROVED:
-        return this.publishApproved(payment);
-      case PaymentStatus.DECLINED:
-        return this.publishDeclined(payment);
-      case PaymentStatus.FAILED:
-        return this.publishFailed(payment);
-      default:
-        // REFUNDED / CANCELLED: the order was cancelled, nothing to report
-        return;
-    }
-  }
-
-  private async publishApproved(payment: Payment) {
-    const correlationId = CorrelationIdService.getId();
-
-    await publishEvent(
-      this.amqpConnection,
+  private approvedEvent(payment: Payment): OutboxRecord {
+    return toOutboxRecord(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_APPROVED,
       new PaymentApprovedEvent(
         { orderId: payment.orderId, transactionId: payment.id },
-        correlationId,
+        CorrelationIdService.getId(),
       ),
     );
   }
 
-  // The reason is read from the record so a republished result (redelivery)
-  // carries the original one. The fallbacks only cover payments decided
-  // before failureReason was persisted.
-
-  private async publishDeclined(payment: Payment) {
-    const correlationId = CorrelationIdService.getId();
-
-    await publishEvent(
-      this.amqpConnection,
+  private declinedEvent(payment: Payment, reason: string): OutboxRecord {
+    return toOutboxRecord(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_DECLINED,
       new PaymentDeclinedEvent(
-        {
-          orderId: payment.orderId,
-          reason: payment.failureReason ?? DEFAULT_DECLINE_REASON,
-        },
-        correlationId,
+        { orderId: payment.orderId, reason },
+        CorrelationIdService.getId(),
       ),
     );
   }
 
-  private async publishFailed(payment: Payment) {
-    const correlationId = CorrelationIdService.getId();
-
-    await publishEvent(
-      this.amqpConnection,
+  private failedEvent(payment: Payment, error: string): OutboxRecord {
+    return toOutboxRecord(
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_FAILED,
       new PaymentFailedEvent(
-        {
-          orderId: payment.orderId,
-          error: payment.failureReason ?? UNKNOWN_FAILURE_REASON,
-        },
-        correlationId,
+        { orderId: payment.orderId, error },
+        CorrelationIdService.getId(),
       ),
     );
   }
@@ -477,24 +461,32 @@ export class PaymentService {
    * Atomic conditional update: succeeds only if the payment is still in the
    * status it was read with, so a concurrent cancel and approval cannot both
    * win. `data` is written in the same update (e.g. failureReason), so it is
-   * never out of sync with the status. Returns whether this call performed
-   * the transition.
+   * never out of sync with the status, and `event` goes to the outbox in the
+   * same transaction, only if this call performed the transition. Returns
+   * whether it did.
    */
   private async transition(
     payment: Payment,
     to: PaymentStatus,
     data: Pick<Partial<Payment>, 'failureReason'> = {},
+    event?: OutboxRecord,
   ): Promise<boolean> {
     if (!canTransition(payment.status, to)) {
       return false;
     }
 
-    const { count } = await this.prisma.payment.updateMany({
-      where: { id: payment.id, status: payment.status },
-      data: { ...data, status: to },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.payment.updateMany({
+        where: { id: payment.id, status: payment.status },
+        data: { ...data, status: to },
+      });
 
-    return count === 1;
+      if (count === 1 && event) {
+        await tx.outboxMessage.create({ data: event });
+      }
+
+      return count === 1;
+    });
   }
 
   private async transitionOrThrow(payment: Payment, to: PaymentStatus) {

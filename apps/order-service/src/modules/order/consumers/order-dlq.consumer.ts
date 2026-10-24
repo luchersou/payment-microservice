@@ -9,6 +9,7 @@ import { MetricNames } from '@common/metrics';
 import {
   createDelayedRequeueErrorHandler,
   DLQ,
+  DLQ_QUEUE_OPTIONS,
   Exchanges,
   getDeadLetterReason,
 } from '@messaging/rabbitmq';
@@ -47,7 +48,7 @@ export class OrderDlqConsumer {
     exchange: Exchanges.DLX,
     routingKey: DLQ.ORDER_CREATE,
     queue: DLQ.ORDER_CREATE,
-    queueOptions: { durable: true },
+    queueOptions: DLQ_QUEUE_OPTIONS,
     errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handleCreateOrderDlq(
@@ -92,7 +93,7 @@ export class OrderDlqConsumer {
     exchange: Exchanges.DLX,
     routingKey: DLQ.ORDER_CANCEL_REQUESTED,
     queue: DLQ.ORDER_CANCEL_REQUESTED,
-    queueOptions: { durable: true },
+    queueOptions: DLQ_QUEUE_OPTIONS,
     errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handleCancelRequestedDlq(
@@ -139,7 +140,7 @@ export class OrderDlqConsumer {
     exchange: Exchanges.DLX,
     routingKey: DLQ.ORDER_PAYMENT_RESULT,
     queue: DLQ.ORDER_PAYMENT_RESULT,
-    queueOptions: { durable: true },
+    queueOptions: DLQ_QUEUE_OPTIONS,
     errorHandler: createDelayedRequeueErrorHandler(),
   })
   async handlePaymentResultDlq(event: PaymentEvents, amqpMsg: ConsumeMessage) {

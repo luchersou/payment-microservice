@@ -9,4 +9,5 @@
  */
 export type * from './models/Payment'
 export type * from './models/FailedMessage'
+export type * from './models/OutboxMessage'
 export type * from './commonInputTypes'

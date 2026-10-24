@@ -26,3 +26,9 @@ export type Payment = Prisma.PaymentModel
  * 
  */
 export type FailedMessage = Prisma.FailedMessageModel
+/**
+ * Model OutboxMessage
+ * Events written in the same transaction as the state change they announce,
+ * published afterwards by the outbox relay (at-least-once)
+ */
+export type OutboxMessage = Prisma.OutboxMessageModel

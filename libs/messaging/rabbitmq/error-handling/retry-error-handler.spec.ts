@@ -1,4 +1,4 @@
-import { Channel, ConsumeMessage } from 'amqplib';
+import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 
 import { Exchanges } from '../constants';
 import {
@@ -9,13 +9,28 @@ import {
   RETRY_COUNT_HEADER,
 } from './retry-error-handler';
 
+type ConfirmCallback = (err: unknown) => void;
+
+/** Confirm channel whose broker confirms every publish right away */
 const makeChannel = () =>
   ({
     assertQueue: jest.fn().mockResolvedValue(undefined),
-    publish: jest.fn().mockReturnValue(true),
+    publish: jest.fn(
+      (
+        _exchange: string,
+        _routingKey: string,
+        _content: Buffer,
+        _options: unknown,
+        confirm: ConfirmCallback,
+      ) => {
+        confirm(null);
+        return true;
+      },
+    ),
+    waitForConfirms: jest.fn().mockResolvedValue(undefined),
     ack: jest.fn(),
     nack: jest.fn(),
-  }) as unknown as jest.Mocked<Channel>;
+  }) as unknown as jest.Mocked<ConfirmChannel>;
 
 const makeMessage = (headers: Record<string, unknown> = {}) =>
   ({
@@ -65,6 +80,7 @@ describe('createRetryErrorHandler', () => {
           [LAST_ERROR_HEADER]: 'db down',
         }) as unknown,
       }),
+      expect.any(Function),
     );
     expect(channel.ack).toHaveBeenCalledWith(msg);
     expect(channel.nack).not.toHaveBeenCalled();
@@ -95,6 +111,7 @@ describe('createRetryErrorHandler', () => {
           [LAST_ERROR_HEADER]: 'still failing',
         }) as unknown,
       }),
+      expect.any(Function),
     );
     expect(channel.ack).toHaveBeenCalledWith(msg);
   });
@@ -110,6 +127,63 @@ describe('createRetryErrorHandler', () => {
 
     expect(channel.ack).not.toHaveBeenCalled();
     expect(channel.nack).toHaveBeenCalledWith(msg, false, false);
+  });
+
+  it('only acks after the broker confirms the republish', async () => {
+    const channel = makeChannel();
+    let confirm!: ConfirmCallback;
+    channel.publish.mockImplementation((...args: unknown[]) => {
+      confirm = args[4] as ConfirmCallback;
+      return true;
+    });
+    const msg = makeMessage();
+
+    const pending = handler(channel, msg, new Error('boom'));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(channel.ack).not.toHaveBeenCalled();
+
+    confirm(null);
+    await pending;
+
+    expect(channel.ack).toHaveBeenCalledWith(msg);
+  });
+
+  it('rejects without requeue when the broker nacks the republish', async () => {
+    const channel = makeChannel();
+    channel.publish.mockImplementation((...args: unknown[]) => {
+      (args[4] as ConfirmCallback)(new Error('nacked'));
+      return true;
+    });
+    const msg = makeMessage();
+
+    await handler(channel, msg, new Error('boom'));
+
+    expect(channel.ack).not.toHaveBeenCalled();
+    expect(channel.nack).toHaveBeenCalledWith(msg, false, false);
+  });
+
+  it('rejects without requeue on a channel without publisher confirms', async () => {
+    const channel = makeChannel();
+    delete (channel as Partial<ConfirmChannel>).waitForConfirms;
+    const msg = makeMessage();
+
+    await handler(channel, msg, new Error('boom'));
+
+    expect(channel.publish).not.toHaveBeenCalled();
+    expect(channel.nack).toHaveBeenCalledWith(msg, false, false);
+  });
+
+  it('does not throw when the channel closed under it', async () => {
+    const channel = makeChannel();
+    channel.assertQueue.mockRejectedValue(new Error('Channel closed'));
+    channel.nack.mockImplementation(() => {
+      throw new Error('Channel closed');
+    });
+
+    await expect(
+      handler(channel, makeMessage(), new Error('boom')),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -131,6 +205,21 @@ describe('createDelayedRequeueErrorHandler', () => {
 
     expect(channel.nack).toHaveBeenCalledWith(msg, false, true);
     jest.useRealTimers();
+  });
+
+  it('does not throw when the channel closed during the delay', async () => {
+    const channel = makeChannel();
+    channel.nack.mockImplementation(() => {
+      throw new Error('Channel closed');
+    });
+
+    await expect(
+      createDelayedRequeueErrorHandler(0)(
+        channel,
+        makeMessage(),
+        new Error('db down'),
+      ),
+    ).resolves.toBeUndefined();
   });
 });
 

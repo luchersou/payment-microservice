@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { Counter, Histogram, Registry } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry } from 'prom-client';
 
 @Injectable()
 export class OrderMetricsService {
@@ -9,6 +9,7 @@ export class OrderMetricsService {
   private readonly ordersCompletedTotal: Counter;
   private readonly ordersFailedTotal: Counter;
   private readonly dlqMessagesTotal: Counter;
+  private readonly ordersStuckPendingPayment: Gauge;
   private readonly messageProcessingDuration: Histogram;
 
   constructor(private readonly registry: Registry) {
@@ -39,6 +40,16 @@ export class OrderMetricsService {
       labelNames: ['queue', 'routing_key'],
     });
 
+    this.ordersStuckPendingPayment =
+      (this.registry.getSingleMetric(
+        'orders_stuck_pending_payment',
+      ) as Gauge) ??
+      new Gauge({
+        name: 'orders_stuck_pending_payment',
+        help: 'Orders in PENDING_PAYMENT for longer than the reconciliation threshold',
+        registers: [this.registry],
+      });
+
     this.messageProcessingDuration =
       (this.registry.getSingleMetric(
         'order_message_processing_duration_seconds',
@@ -66,6 +77,10 @@ export class OrderMetricsService {
 
   incrementOrdersFailed() {
     this.ordersFailedTotal.inc();
+  }
+
+  setOrdersStuckPendingPayment(count: number) {
+    this.ordersStuckPendingPayment.set(count);
   }
 
   incrementDlqMessages(queue: string, routingKey: string) {

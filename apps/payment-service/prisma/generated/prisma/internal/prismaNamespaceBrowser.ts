@@ -51,7 +51,8 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   Payment: 'Payment',
-  FailedMessage: 'FailedMessage'
+  FailedMessage: 'FailedMessage',
+  OutboxMessage: 'OutboxMessage'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -89,10 +90,25 @@ export const FailedMessageScalarFieldEnum = {
   routingKey: 'routingKey',
   payload: 'payload',
   error: 'error',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  replayedAt: 'replayedAt'
 } as const
 
 export type FailedMessageScalarFieldEnum = (typeof FailedMessageScalarFieldEnum)[keyof typeof FailedMessageScalarFieldEnum]
+
+
+export const OutboxMessageScalarFieldEnum = {
+  id: 'id',
+  exchange: 'exchange',
+  routingKey: 'routingKey',
+  payload: 'payload',
+  correlationId: 'correlationId',
+  attempts: 'attempts',
+  createdAt: 'createdAt',
+  publishedAt: 'publishedAt'
+} as const
+
+export type OutboxMessageScalarFieldEnum = (typeof OutboxMessageScalarFieldEnum)[keyof typeof OutboxMessageScalarFieldEnum]
 
 
 export const SortOrder = {
