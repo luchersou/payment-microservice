@@ -30,6 +30,27 @@ describe('OrdersService (gateway)', () => {
       payload: Record<string, unknown>;
     };
 
+  describe('createOrder', () => {
+    it('returns the generated orderId with the initial order status', async () => {
+      const response = await inRequest(() =>
+        service.createOrder({
+          userId: '11111111-1111-4111-8111-111111111111',
+          totalCents: 1999,
+        }),
+      );
+
+      expect(response).toEqual({
+        orderId: expect.any(String),
+        message: 'Order creation request accepted',
+        status: 'PENDING_PAYMENT',
+      });
+      expect(publishedEvent()).toMatchObject({
+        correlationId: 'req-1',
+        payload: { orderId: response.orderId, totalCents: 1999 },
+      });
+    });
+  });
+
   describe('cancelOrder', () => {
     it('carries the request correlationId in the event body and properties', async () => {
       await inRequest(() => service.cancelOrder('order-1'));

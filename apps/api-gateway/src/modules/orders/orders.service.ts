@@ -58,7 +58,8 @@ export class OrdersService {
     return {
       orderId,
       message: 'Order creation request accepted',
-      status: 'PENDING',
+      // The status every order starts in (order-service OrderStatus)
+      status: 'PENDING_PAYMENT',
     };
   }
 
