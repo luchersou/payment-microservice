@@ -17,7 +17,7 @@ This project was built to showcase real-world backend architecture concepts such
 
 ## 📐 Architecture
 
-This project implements a **microservices architecture** with an **API Gateway** that orchestrates communication between services using both **synchronous HTTP** (for queries) and **asynchronous events** (for commands).
+This project implements a **microservices architecture** with an **API Gateway** that routes communication between services using both **synchronous HTTP** (for queries) and **asynchronous events** (for commands).
 ```mermaid
 graph LR
     Client[Client] -->|HTTP| GW[API Gateway]
@@ -45,7 +45,8 @@ graph LR
 - **API Gateway**: Single entry point for all client requests (port 3000)
 - **Event-Driven Commands**: POST/PATCH operations emit events via RabbitMQ
 - **Synchronous Queries**: GET operations make direct HTTP calls to microservices
-- **Saga Pattern (Choreography)**: Distributed transactions coordinated through events, with compensating actions for failures and cancellations
+- **Saga Pattern (Choreography)**: Distributed transactions coordinated through events, with compensating actions for cancellations
+- **Light hexagonal design** in the order and payment services: domain entities and ports only where there is an external dependency (database, payment provider); reads stay plain Prisma queries
 - **Service Autonomy**: Each microservice has its own database and business logic
 - **Decoupled Communication**: Services communicate through events, not direct calls
 
@@ -78,13 +79,15 @@ payment-microservice/
 │   │       │   ├── health/
 │   │       │   ├── metrics/
 │   │       │   └── order/
+│   │       │       ├── domain/      # Order entity, state machine, repository port
+│   │       │       ├── application/ # Use cases, queries, reconciliation job
+│   │       │       ├── infra/       # Prisma repositories, outbox event mapping
 │   │       │       ├── consumers/   # Main + DLQ consumers
 │   │       │       ├── controllers/
-│   │       │       ├── domain/      # Order state machine
-│   │       │       ├── dto/
-│   │       │       └── services/
+│   │       │       └── dto/
 │   │       ├── app.module.ts
-│   │       └── main.ts
+│   │       ├── main.ts
+│   │       └── replay-dlq.ts        # DLQ replay CLI
 │   │
 │   └── payment-service/             # Payment Microservice (Port 3002)
 │       ├── prisma/
@@ -94,24 +97,30 @@ payment-microservice/
 │           │   ├── health/
 │           │   ├── metrics/
 │           │   └── payment/
+│           │       ├── domain/      # Payment entity, state machine, repository + gateway ports
+│           │       ├── application/ # Use cases, queries, reconciliation job
+│           │       ├── infra/       # Prisma repositories, simulated gateway, outbox mapping
 │           │       ├── consumers/
 │           │       ├── controllers/
-│           │       ├── domain/      # Payment state machine
-│           │       ├── dto/
-│           │       └── services/
+│           │       └── dto/
 │           ├── app.module.ts
-│           └── main.ts
+│           ├── main.ts
+│           └── replay-dlq.ts        # DLQ replay CLI
 │
 ├── libs/
 │   ├── contracts/                   # Shared contracts, split by domain
 │   │   ├── order-events/            # Order domain events, types, and cancel reasons
 │   │   └── payment-events/          # Payment domain events and types
 │   │
-│   ├── messaging/                   # Shared RabbitMQ module
-│   │   └── rabbitmq/
-│   │       ├── config/              # Connection, exchanges, queue options
-│   │       ├── constants/           # Exchanges, queues, routing keys, DLQs
-│   │       └── error-handling/      # Bounded retries + dead-lettering
+│   ├── messaging/                   # Shared messaging building blocks
+│   │   ├── rabbitmq/
+│   │   │   ├── config/              # Connection, exchanges, full queue topology
+│   │   │   ├── constants/           # Exchanges, queues, routing keys, DLQs
+│   │   │   ├── error-handling/      # Bounded retries + dead-lettering (publisher confirms)
+│   │   │   └── publishing/          # publishEvent: persistent + correlationId
+│   │   ├── outbox/                  # Transactional outbox records + relay
+│   │   ├── dlq/                     # Dead letter replay
+│   │   └── database/                # Raw SQL client interface shared by the jobs
 │   │
 │   └── common/                      # Shared utilities
 │       ├── config/                  # Env validation helpers
@@ -156,10 +165,11 @@ payment-microservice/
          ├──► CANCELLED                    (user cancel)
          └──► FAILED                       (payment declined or failed)
   ```
-  `CANCELLED` and `FAILED` are terminal
+  `CANCELLED` and `FAILED` are terminal. A declined payment makes the order `FAILED`, not `CANCELLED`: `CANCELLED` only ever means the user cancelled it
 * Consumes `order.create.requested` and `order.cancel.requested` to create and cancel orders
-* Consumes `payment.approved`, `payment.declined`, `payment.failed` to update the order status
-* Emits `order.created` and `order.cancelled` to trigger downstream reactions
+* A cancel that arrives before the order exists creates it directly as `CANCELLED` (a **tombstone**, with no `userId`/`total`), so the create request that arrives later does nothing
+* Consumes `payment.approved`, `payment.declined`, `payment.failed` to update the order status, and `payment.refunded` only to record it (log + metric)
+* Emits `order.created` and `order.cancelled` (user cancellations only) through the outbox
 * RESTful API for order queries (GET endpoints)
 * Isolated PostgreSQL database
 
@@ -168,12 +178,17 @@ payment-microservice/
   ```
   PROCESSING ──► APPROVED ──► REFUNDED   (order cancelled after payment)
       │
-      ├──► DECLINED                      (gateway declined, or order cancelled while processing)
-      └──► FAILED                        (unexpected gateway error)
+      ├──► DECLINED                      (gateway declined; the reason is stored in failureReason)
+      ├──► FAILED                        (unexpected gateway error; failureReason too)
+      └──► CANCELLED                     (order cancelled while processing)
   ```
-* Consumes `order.created` to process the payment and `order.cancelled` to decline or refund it
-* Emits `payment.approved`, `payment.declined`, `payment.failed` based on the result
-* Simulates a payment gateway (~1.5s latency, ~20% declined for insufficient funds)
+  `DECLINED`, `FAILED`, `REFUNDED` and `CANCELLED` are terminal
+* Consumes `order.created` to charge the payment and `order.cancelled` to cancel or refund it
+* A cancel that arrives before `order.created` writes a `CANCELLED` **tombstone** payment (no amount), so the `order.created` that arrives later never charges
+* If the cancel wins the race while a charge is in flight, the charge is refunded through the gateway
+* Emits `payment.approved`, `payment.declined`, `payment.failed` and `payment.refunded` through the outbox
+* The provider sits behind a `PaymentGateway` port (`charge(paymentId, amountCents)`, `refund(paymentId)`, with `paymentId` as the idempotency key). The bundled `SimulatedPaymentGateway` has ~1.5s latency and declines ~20% for insufficient funds
+* Amounts are integers in cents (`amountCents`)
 * Provides payment statistics and queries
 * Isolated PostgreSQL database
 
@@ -181,20 +196,25 @@ payment-microservice/
 - RabbitMQ topic exchanges (`orders.exchange`, `payments.exchange`) for asynchronous pub/sub
 - Each service owns its queues and binds them to the routing keys it consumes
 - No shared queues between services
+- The whole topology (queues, bindings, DLQs) is declared by every service at boot
 - Durable queues and persistent messages
 
-### ✅ Reliability
-- **Bounded retries**: a failing message is retried **3 times, 5 seconds apart** (through a `<queue>.retry` TTL queue), then sent to the service's **DLQ**
-- **Dead letters are persisted** in a `failed_messages` table with the real error; if the database is down, the DLQ message is requeued instead of lost
-- **Idempotent consumers**: redelivered messages never create duplicate orders or payments; if a previous attempt crashed after writing, the event is republished or the payment is resumed
-- **Atomic state transitions**: every status change is a conditional update guarded by the state machine, so concurrent events (e.g. a cancel racing a payment approval) cannot overwrite each other
-- **Out-of-order events**: a cancel that arrives before the order or payment exists is retried instead of dropped
+### ✅ Reliability Patterns
+- **Idempotency by business key**: orders are keyed by the `orderId` the gateway generates and payments are unique per `orderId`, so a redelivered message finds the existing record instead of creating a duplicate, and does nothing if it was already processed
+- **State machine with conditional updates**: every status change goes through the state machine and is saved only if the record still has the status it was read with, so concurrent events (e.g. a cancel racing a payment approval) cannot both win
+- **Tombstones**: a cancel handled before the record it cancels exists (separate queues, no ordering) writes a `CANCELLED` record with the same key; the create that arrives later finds it and neither creates the order nor charges the customer
+- **Transactional outbox**: an event is written to `outbox_messages` in the same transaction as the state change it announces; a relay publishes pending rows (polling with `FOR UPDATE SKIP LOCKED`, safe with several instances) and marks them published after the broker confirms. Delivery is at-least-once, so consumers stay idempotent
+- **Retry with delay + DLQ + replay**: a failing message is retried **3 times, 5 seconds apart** (through a `<queue>.retry` TTL queue), then sent to the service's **DLQ** and persisted in `failed_messages` with the real error (requeued if the database is down). Once the cause is fixed, the [replay CLI](#dlq-replay) republishes them to their original queue
+- **Reconciliation**: a scheduled job resumes payments stuck in `PROCESSING` and reports orders stuck in `PENDING_PAYMENT` (`orders_stuck_pending_payment` gauge) after `RECONCILIATION_STUCK_AFTER_MINUTES`
+- **Persistent messages**: every publish goes through `publishEvent`, which always sets `persistent: true` (durable queues alone do not survive a broker restart) and the correlation ID
+- **Publisher confirms**: the outbox relay, the retry handler and the replay only consider a message sent once the broker confirms it; the retry handler acks the original message only after its republish is confirmed
 - **Health checks** (database + RabbitMQ) used by Docker Compose, **graceful shutdown** on `SIGTERM`, and **environment validation** at boot
 
 ### ✅ Saga Pattern (Choreography)
 - **Happy path**: `order.create.requested` → `order.created` → `payment.approved` → order `PAID`
-- **Failure path**: `payment.declined` or `payment.failed` → order `FAILED`
-- **Compensating transaction**: `order.cancel.requested` → order `CANCELLED` → `order.cancelled` → payment `DECLINED` (if still processing) or `REFUNDED` (if already approved)
+- **Failure path**: `payment.declined` or `payment.failed` → order `FAILED`. Nothing is published back: the payment is already final, so there is nothing to compensate
+- **Compensating transaction**: `order.cancel.requested` → order `CANCELLED` → `order.cancelled` → payment `CANCELLED` (if still processing) or refunded → `REFUNDED` + `payment.refunded` (if already approved)
+- **Out-of-order cancel**: if the cancel is handled first, a `CANCELLED` tombstone takes the key in the order service and/or the payment service, and the late create is a no-op
 - **No central coordinator**: each service reacts to domain events via its own queues and emits new events
 
 ### Messaging Design
@@ -205,7 +225,7 @@ payment-microservice/
 | `orders.exchange` | `order.cancel.requested` | API Gateway | Order Service (`order.cancel-requested.queue`) |
 | `orders.exchange` | `order.created` | Order Service | Payment Service (`payment.order-created.queue`) |
 | `orders.exchange` | `order.cancelled` | Order Service | Payment Service (`payment.order-cancelled.queue`) |
-| `payments.exchange` | `payment.approved` / `payment.declined` / `payment.failed` | Payment Service | Order Service (`order.payment-result.queue`) |
+| `payments.exchange` | `payment.approved` / `payment.declined` / `payment.failed` / `payment.refunded` | Payment Service | Order Service (`order.payment-result.queue`) |
 
 Each queue has a `<queue>.retry` companion and a dead-letter queue bound on `dlx.exchange` (e.g. `order.create.dlq`).
 
@@ -282,6 +302,11 @@ Validated at boot: a service with an invalid or missing variable fails to start 
 | `ORDER_SERVICE_URL` | gateway | `http://localhost:3001` |
 | `PAYMENT_SERVICE_URL` | gateway | `http://localhost:3002` |
 | `REQUEST_TIMEOUT` | gateway | `5000` (ms) |
+| `OUTBOX_POLL_INTERVAL_MS` | order, payment | `1000` |
+| `OUTBOX_BATCH_SIZE` | order, payment | `100` |
+| `OUTBOX_PUBLISH_TIMEOUT_MS` | order, payment | `5000` |
+| `RECONCILIATION_INTERVAL_MS` | order, payment | `60000` |
+| `RECONCILIATION_STUCK_AFTER_MINUTES` | order, payment | `5` |
 
 ---
 
@@ -365,16 +390,18 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
                → Respond 202 with orderId
 
 3. Order Service → Consume order.create.requested
-   - Persist order (status: PENDING_PAYMENT)
-   - Emit order.created → RabbitMQ
+   - Persist order (status: PENDING_PAYMENT) + order.created in the outbox (one transaction)
+   - Outbox relay → Emit order.created → RabbitMQ
+   - If a tombstone already holds the orderId (cancelled first) → nothing
 
 4. Payment Service → Consume order.created
    - Create payment (status: PROCESSING)
-   - Call the simulated payment gateway
+   - If a tombstone already holds the orderId (cancelled first) → never charge
+   - Charge through the PaymentGateway (paymentId as idempotency key)
 
-5. Payment Service → Emit:
+5. Payment Service → Save the result + its event in the outbox, then emit:
    - payment.approved
-   - OR payment.declined
+   - OR payment.declined (reason kept in failureReason)
    - OR payment.failed
 
 6. Order Service → Consume payment event
@@ -391,13 +418,20 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 
 3. Order Service → Consume order.cancel.requested
    - If PENDING_PAYMENT or PAID → Update order status → CANCELLED
-                                → Emit order.cancelled → RabbitMQ
+                                → Emit order.cancelled (outbox) → RabbitMQ
+   - If it does not exist yet   → Create it as CANCELLED (tombstone)
+                                → Emit order.cancelled
    - If FAILED → Ignore (terminal)
 
 4. Payment Service → Consume order.cancelled
-   - If PROCESSING → Mark as DECLINED
-   - If APPROVED   → Refund → Mark as REFUNDED
-   - Otherwise     → Ignore
+   - If PROCESSING   → Mark as CANCELLED
+                       (a charge still in flight is refunded when it returns)
+   - If APPROVED     → Refund through the gateway → Mark as REFUNDED
+                     → Emit payment.refunded
+   - If it does not exist yet → Create it as CANCELLED (tombstone, no amount)
+   - Otherwise       → Ignore
+
+5. Order Service → Consume payment.refunded → log + metric only
 ```
 ---
 
@@ -412,7 +446,7 @@ Content-Type: application/json
 
 {
   "userId": "d55fa6d6-63c2-4633-aeaf-ecf0c80fb48f",
-  "total": 999
+  "totalCents": 1999
 }
 ```
 
@@ -422,16 +456,18 @@ curl -X POST http://localhost:3000/api/orders \
   -H "Content-Type: application/json" \
   -d '{
     "userId": "d55fa6d6-63c2-4633-aeaf-ecf0c80fb48f",
-    "total": 999
+    "totalCents": 1999
   }'
 ```
 
-**Response:** `202 Accepted`
+`totalCents` is an integer amount in cents (`1999` = 19.99); a decimal value is rejected with `400`.
+
+**Response:** `202 Accepted`. The order is created asynchronously; use the `orderId` to follow it:
 ```json
 {
     "orderId": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
     "message": "Order creation request accepted",
-    "status": "PENDING"
+    "status": "PENDING_PAYMENT"
 }
 ```
 
@@ -452,7 +488,7 @@ curl "http://localhost:3000/api/orders?page=1&limit=10"
     {
       "id": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
       "userId": "d55fa6d6-63c2-4633-aeaf-ecf0c80fb48f",
-      "total": 999,
+      "totalCents": 1999,
       "status": "PAID",
       "createdAt": "2026-02-15T01:42:19.000Z",
       "updatedAt": "2026-02-15T01:42:21.000Z"
@@ -460,7 +496,7 @@ curl "http://localhost:3000/api/orders?page=1&limit=10"
     {
       "id": "b7740f92-e574-4936-aa23-56f98ba61418",
       "userId": "d55fa6d6-63c2-4633-aeaf-ecf0c80fb48f",
-      "total": 999,
+      "totalCents": 1999,
       "status": "CANCELLED",
       "createdAt": "2026-02-15T01:42:39.000Z",
       "updatedAt": "2026-02-15T01:42:40.000Z"
@@ -490,7 +526,7 @@ curl http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195
 {
   "id": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
   "userId": "d55fa6d6-63c2-4633-aeaf-ecf0c80fb48f",
-  "total": 999,
+  "totalCents": 1999,
   "status": "PAID",
   "createdAt": "2026-02-15T01:42:19.000Z",
   "updatedAt": "2026-02-15T01:42:21.000Z"
@@ -502,7 +538,7 @@ curl http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195
 PATCH http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195/cancel
 ```
 
-**cURL:**
+**cURL:** (no body)
 ```bash
 curl -X PATCH http://localhost:3000/api/orders/476f5730-aa83-4ff0-ab9f-d6e19836e195/cancel
 ```
@@ -536,16 +572,18 @@ curl "http://localhost:3000/api/payments?page=1&limit=10"
     {
       "id": "8a5da4d7-3512-4c74-bd62-64b6c0e93e7a",
       "orderId": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
-      "amount": 999,
+      "amountCents": 1999,
       "status": "APPROVED",
+      "failureReason": null,
       "createdAt": "2026-02-15T01:42:19.500Z",
       "updatedAt": "2026-02-15T01:42:20.500Z"
     },
     {
       "id": "1220b65f-df5f-456d-8238-e03520bff097",
       "orderId": "b7740f92-e574-4936-aa23-56f98ba61418",
-      "amount": 999,
+      "amountCents": 1999,
       "status": "DECLINED",
+      "failureReason": "Insufficient funds",
       "createdAt": "2026-02-15T01:42:39.200Z",
       "updatedAt": "2026-02-15T01:42:40.200Z"
     }
@@ -574,8 +612,9 @@ curl http://localhost:3000/api/payments/8a5da4d7-3512-4c74-bd62-64b6c0e93e7a
 {
   "id": "8a5da4d7-3512-4c74-bd62-64b6c0e93e7a",
   "orderId": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
-  "amount": 999,
+  "amountCents": 1999,
   "status": "APPROVED",
+  "failureReason": null,
   "createdAt": "2026-02-15T01:42:19.500Z",
   "updatedAt": "2026-02-15T01:42:20.500Z"
 }
@@ -596,8 +635,9 @@ curl http://localhost:3000/api/payments/order/476f5730-aa83-4ff0-ab9f-d6e19836e1
 {
   "id": "8a5da4d7-3512-4c74-bd62-64b6c0e93e7a",
   "orderId": "476f5730-aa83-4ff0-ab9f-d6e19836e195",
-  "amount": 999,
+  "amountCents": 1999,
   "status": "APPROVED",
+  "failureReason": null,
   "createdAt": "2026-02-15T01:42:19.500Z",
   "updatedAt": "2026-02-15T01:42:20.500Z"
 }
@@ -620,12 +660,12 @@ curl http://localhost:3000/api/payments/stats
     {
       "status": "APPROVED",
       "count": 2,
-      "totalAmount": 1998
+      "totalAmountCents": 3998
     },
     {
       "status": "DECLINED",
       "count": 1,
-      "totalAmount": 999
+      "totalAmountCents": 1999
     }
   ]
 }
@@ -652,6 +692,19 @@ RABBITMQ_URL=amqp://admin:admin123@localhost:5672 \
 npm run start:order:dev
 ```
 
+### DLQ replay
+
+Dead letters stay in each service's `failed_messages` table. After fixing what made them fail, republish them to the queue whose consumer gave up on them (rows are marked `replayedAt`; a message that fails again comes back as a new row):
+
+```bash
+# inside the running container
+docker exec payment-service node /app/dist/apps/payment-service/src/replay-dlq.js
+docker exec order-service node /app/dist/apps/order-service/src/replay-dlq.js --queue order.payment-result.dlq --limit 50
+
+# or locally, after npm run build, with DATABASE_URL and RABBITMQ_URL set
+npm run dlq:replay:payment -- --limit 100
+```
+
 ---
 
 ## 🏛️ Design Patterns Used
@@ -661,8 +714,11 @@ npm run start:order:dev
 - **Event-Driven Architecture**: Asynchronous communication via RabbitMQ
 - **Saga Pattern (Choreography)**: Distributed transactions with compensating actions across services
 - **State Machine**: Explicit, atomically enforced status transitions for orders and payments
-- **Idempotent Consumer**: Safe handling of redelivered messages
-- **Retry + Dead Letter Queue**: Bounded, delayed retries before isolating poison messages
+- **Idempotent Consumer**: Safe handling of redelivered messages, by business key
+- **Tombstone**: Out-of-order cancels recorded before the entity exists
+- **Transactional Outbox**: State change and event committed together
+- **Retry + Dead Letter Queue + Replay**: Bounded, delayed retries before isolating poison messages, and a way to reprocess them
+- **Ports and Adapters (light)**: Repository and payment gateway ports, Prisma and simulated adapters
 
 ---
 
