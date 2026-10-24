@@ -1,7 +1,12 @@
 import { Logger } from '@nestjs/common';
 
 import { MessageErrorHandler } from '@golevelup/nestjs-rabbitmq';
-import { Channel, ConsumeMessage, MessagePropertyHeaders } from 'amqplib';
+import {
+  Channel,
+  ConfirmChannel,
+  ConsumeMessage,
+  MessagePropertyHeaders,
+} from 'amqplib';
 import { Counter, register } from 'prom-client';
 
 import { Exchanges } from '../constants';
@@ -52,8 +57,9 @@ function failuresCounter(): Counter<'queue' | 'outcome'> {
  * - Once retries are exhausted: the message is published to the DLX with the
  *   DLQ routing key and the last error in the `x-last-error` header.
  *
- * The original message is only acked after the republish succeeds. If the
- * republish itself throws, the message is rejected without requeue so the
+ * The original message is only acked after the broker confirms the
+ * republish; until then the copy may still be lost. If the republish throws
+ * or is not confirmed, the message is rejected without requeue so the
  * queue's own `x-dead-letter-exchange` still routes it to the DLQ.
  */
 export function createRetryErrorHandler({
@@ -82,7 +88,7 @@ export function createRetryErrorHandler({
           },
         });
 
-        republish(channel, msg, '', retryQueue, {
+        await republish(channel, msg, '', retryQueue, {
           ...headers,
           [RETRY_COUNT_HEADER]: attempt + 1,
           [LAST_ERROR_HEADER]: reason,
@@ -93,7 +99,7 @@ export function createRetryErrorHandler({
           `[${correlationId}] 🔁 ${queue}: retry ${attempt + 1}/${maxRetries} in ${delayMs}ms — ${reason}`,
         );
       } else {
-        republish(channel, msg, Exchanges.DLX, dlq, {
+        await republish(channel, msg, Exchanges.DLX, dlq, {
           ...headers,
           [LAST_ERROR_HEADER]: reason,
         });
@@ -103,8 +109,6 @@ export function createRetryErrorHandler({
           `[${correlationId}] ☠️ ${queue}: retries exhausted (${maxRetries}), sent to ${dlq} — ${reason}`,
         );
       }
-
-      channel.ack(msg);
     } catch (republishError) {
       logger.error(
         `[${correlationId}] ❌ ${queue}: could not republish failed message, rejecting to DLX`,
@@ -112,31 +116,68 @@ export function createRetryErrorHandler({
           ? republishError.stack
           : String(republishError),
       );
-      channel.nack(msg, false, false);
+      settle(logger, () => channel.nack(msg, false, false));
+      return;
     }
+
+    // Only now is the copy safe on the broker
+    settle(logger, () => channel.ack(msg));
   };
 }
 
+const isConfirmChannel = (channel: Channel): channel is ConfirmChannel =>
+  typeof (channel as Partial<ConfirmChannel>).waitForConfirms === 'function';
+
+/** Resolves once the broker confirms the message, rejects if it nacks it */
 function republish(
   channel: Channel,
   msg: ConsumeMessage,
   exchange: string,
   routingKey: string,
   headers: MessagePropertyHeaders,
-) {
+): Promise<void> {
   const { properties } = msg;
 
-  channel.publish(exchange, routingKey, msg.content, {
-    headers,
-    persistent: true,
-    contentType: properties.contentType as string | undefined,
-    contentEncoding: properties.contentEncoding as string | undefined,
-    correlationId: properties.correlationId as string | undefined,
-    messageId: properties.messageId as string | undefined,
-    timestamp: properties.timestamp as number | undefined,
-    type: properties.type as string | undefined,
-    appId: properties.appId as string | undefined,
+  return new Promise((resolve, reject) => {
+    // Without publisher confirms there is no way to know the copy arrived
+    if (!isConfirmChannel(channel)) {
+      reject(new Error('Channel is not in confirm mode'));
+      return;
+    }
+
+    channel.publish(
+      exchange,
+      routingKey,
+      msg.content,
+      {
+        headers,
+        persistent: true,
+        contentType: properties.contentType as string | undefined,
+        contentEncoding: properties.contentEncoding as string | undefined,
+        correlationId: properties.correlationId as string | undefined,
+        messageId: properties.messageId as string | undefined,
+        timestamp: properties.timestamp as number | undefined,
+        type: properties.type as string | undefined,
+        appId: properties.appId as string | undefined,
+      },
+      (err) => (err ? reject(err as Error) : resolve()),
+    );
   });
+}
+
+/**
+ * ack/nack throw once the channel is closed (e.g. broker restart). The broker
+ * then redelivers every unacked message itself, so there is nothing to do,
+ * and letting the error escape would crash the process (unhandled rejection).
+ */
+function settle(logger: Logger, action: () => void) {
+  try {
+    action();
+  } catch (error) {
+    logger.warn(
+      `⚠️ Could not settle message, the broker will redeliver it — ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /**
@@ -155,7 +196,7 @@ export function createDelayedRequeueErrorHandler(
     );
 
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-    channel.nack(msg, false, true);
+    settle(logger, () => channel.nack(msg, false, true));
   };
 }
 
