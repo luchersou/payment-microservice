@@ -130,6 +130,27 @@ describe('PrismaPaymentRepository', () => {
     ]);
   });
 
+  it('writes payment.refunded when a refund is saved', async () => {
+    const payment = await processing();
+    fake.rows.get(payment.id)!.status = PaymentStatus.APPROVED;
+    const approved = Payment.fromProps({
+      ...fake.rows.get(payment.id)!,
+    });
+    approved.refund();
+
+    await repository.save(approved);
+
+    expect(fake.outbox).toEqual([
+      expect.objectContaining({
+        exchange: Exchanges.PAYMENTS,
+        routingKey: RoutingKeys.PAYMENT_REFUNDED,
+        payload: expect.objectContaining({
+          payload: { orderId: 'order-1', transactionId: payment.id },
+        }),
+      }),
+    ]);
+  });
+
   it('saves nothing when the payment changed since it was read', async () => {
     const payment = await processing();
     fake.rows.get(payment.id)!.status = PaymentStatus.CANCELLED;

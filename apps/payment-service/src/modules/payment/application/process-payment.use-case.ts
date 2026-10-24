@@ -197,11 +197,22 @@ export class ProcessPaymentUseCase {
   }
 
   private async refundLostApproval(payment: Payment) {
-    if (await this.gateway.refund(payment.id)) {
-      this.metrics.incrementPaymentsRefunded();
-      this.logger.log(
-        `💰 Charge of cancelled payment ${payment.id} refunded for order ${payment.orderId}`,
-      );
+    if (!(await this.gateway.refund(payment.id))) return;
+
+    this.metrics.incrementPaymentsRefunded();
+    this.logger.log(
+      `💰 Charge of cancelled payment ${payment.id} refunded for order ${payment.orderId}`,
+    );
+
+    // Announce it from a fresh read: `payment` may still hold the lost
+    // approval. The refund itself cannot share a transaction with the
+    // event; if this save fails the retry finds nothing left to refund and
+    // the (informational) PaymentRefunded is not published.
+    const cancelled = await this.payments.findByOrderId(payment.orderId);
+
+    if (cancelled?.status === PaymentStatus.CANCELLED) {
+      cancelled.recordRefundOfLostCharge();
+      await this.payments.save(cancelled);
     }
   }
 }

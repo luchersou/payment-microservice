@@ -43,6 +43,9 @@ describe('CancelPaymentUseCase', () => {
     expect(gateway.refund).toHaveBeenCalledWith(approved.id);
     expect(status()).toBe(PaymentStatus.REFUNDED);
     expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+    expect(payments.events).toEqual([
+      { type: 'PaymentRefunded', paymentId: approved.id, orderId: 'order-1' },
+    ]);
   });
 
   it('keeps the payment APPROVED when the refund fails, so the retry refunds it', async () => {

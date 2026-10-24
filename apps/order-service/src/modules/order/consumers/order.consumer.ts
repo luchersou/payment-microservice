@@ -24,6 +24,7 @@ import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
+  PaymentRefundedEvent,
 } from '@contracts/payment-events';
 import { PaymentEventTypes } from '@contracts/payment-events';
 
@@ -35,7 +36,8 @@ import { CreateOrderUseCase } from '../application/create-order.use-case';
 type PaymentEvents =
   | PaymentApprovedEvent
   | PaymentDeclinedEvent
-  | PaymentFailedEvent;
+  | PaymentFailedEvent
+  | PaymentRefundedEvent;
 
 @Injectable()
 export class OrderConsumer {
@@ -138,6 +140,7 @@ export class OrderConsumer {
       RoutingKeys.PAYMENT_APPROVED,
       RoutingKeys.PAYMENT_DECLINED,
       RoutingKeys.PAYMENT_FAILED,
+      RoutingKeys.PAYMENT_REFUNDED,
     ],
     queue: Queues.ORDER_PAYMENT_RESULT,
     queueOptions: ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
@@ -170,6 +173,12 @@ export class OrderConsumer {
 
           case PaymentEventTypes.PAYMENT_FAILED:
             await this.applyPaymentResult.execute(orderId, 'failed');
+            break;
+
+          // Informational: the order is already CANCELLED, nothing changes
+          case PaymentEventTypes.PAYMENT_REFUNDED:
+            this.metrics.incrementPaymentRefunds();
+            this.logger.log(`💰 Payment for order ${orderId} was refunded`);
             break;
 
           default:

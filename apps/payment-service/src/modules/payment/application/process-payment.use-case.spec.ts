@@ -151,10 +151,11 @@ describe('ProcessPaymentUseCase', () => {
 
       const payment = payments.stored('order-1')!;
       expect(payment.status).toBe(PaymentStatus.CANCELLED);
-      expect(payments.events).toHaveLength(0);
       expect(metrics.incrementPaymentsApproved).not.toHaveBeenCalled();
       expect(gateway.refund).toHaveBeenCalledWith(payment.id);
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+      // No PaymentApproved, only the refund
+      expect(eventTypes()).toEqual(['PaymentRefunded']);
     });
 
     it('retries a failed refund on redelivery', async () => {
@@ -169,6 +170,7 @@ describe('ProcessPaymentUseCase', () => {
       expect(gateway.charge).toHaveBeenCalledTimes(1);
       expect(gateway.refund).toHaveBeenCalledTimes(2);
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+      expect(eventTypes()).toEqual(['PaymentRefunded']);
     });
   });
 
