@@ -44,8 +44,9 @@ async function call(method, path, body) {
 }
 
 async function createOrder() {
-  const total = Math.round((10 + Math.random() * 490) * 100) / 100;
-  const res = await call('POST', '/orders', { userId: USER_ID, total });
+  // 10.00 to 500.00, in integer cents
+  const totalCents = Math.round((10 + Math.random() * 490) * 100);
+  const res = await call('POST', '/orders', { userId: USER_ID, totalCents });
   if (!res?.orderId) return;
 
   stats.created++;

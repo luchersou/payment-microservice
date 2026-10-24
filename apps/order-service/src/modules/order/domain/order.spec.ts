@@ -2,7 +2,7 @@ import { InvalidOrderTransitionError, Order } from './order';
 import { OrderStatus } from './order-status';
 
 const existing = (status: OrderStatus) =>
-  Order.fromProps({ id: 'o', userId: 'u', total: 100, status });
+  Order.fromProps({ id: 'o', userId: 'u', totalCents: 100, status });
 
 describe('Order', () => {
   it('creates a PENDING_PAYMENT order that announces OrderCreated', () => {
@@ -11,7 +11,7 @@ describe('Order', () => {
     expect(order.status).toBe(OrderStatus.PENDING_PAYMENT);
     expect(order.loadedStatus).toBeNull();
     expect(order.pullEvents()).toEqual([
-      { type: 'OrderCreated', orderId: 'o', userId: 'u', total: 100 },
+      { type: 'OrderCreated', orderId: 'o', userId: 'u', totalCents: 100 },
     ]);
   });
 
@@ -21,7 +21,7 @@ describe('Order', () => {
     expect(tombstone).toMatchObject({
       status: OrderStatus.CANCELLED,
       userId: null,
-      total: null,
+      totalCents: null,
     });
     expect(tombstone.pullEvents()).toEqual([
       { type: 'OrderCancelled', orderId: 'o', cancelledAt: expect.any(Date) },

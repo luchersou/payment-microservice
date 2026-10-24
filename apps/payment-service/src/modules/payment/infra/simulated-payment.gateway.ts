@@ -33,7 +33,7 @@ export class SimulatedPaymentGateway implements PaymentGateway {
     this.random = random;
   }
 
-  async charge(paymentId: string, amount: number): Promise<ChargeResult> {
+  async charge(paymentId: string, amountCents: number): Promise<ChargeResult> {
     const previous = this.charges.get(paymentId);
     if (previous) return previous;
 
@@ -45,7 +45,9 @@ export class SimulatedPaymentGateway implements PaymentGateway {
         : { status: 'approved' };
 
     this.charges.set(paymentId, result);
-    this.logger.log(`🏦 Charge ${paymentId} (${amount}): ${result.status}`);
+    this.logger.log(
+      `🏦 Charge ${paymentId} (${amountCents}): ${result.status}`,
+    );
     return result;
   }
 

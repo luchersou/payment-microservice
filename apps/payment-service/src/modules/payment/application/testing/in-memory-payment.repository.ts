@@ -24,7 +24,7 @@ export class InMemoryPaymentRepository implements PaymentRepository {
     const props: PaymentProps = {
       id: `pay-${++this.seq}`,
       orderId,
-      amount: 100,
+      amountCents: 100,
       status,
       failureReason: null,
       ...extra,
@@ -53,8 +53,15 @@ export class InMemoryPaymentRepository implements PaymentRepository {
     return Promise.resolve(props ? Payment.fromProps(props) : null);
   }
 
-  createProcessing(orderId: string, amount: number): Promise<Payment | null> {
-    return this.createUnlessExists(orderId, amount, PaymentStatus.PROCESSING);
+  createProcessing(
+    orderId: string,
+    amountCents: number,
+  ): Promise<Payment | null> {
+    return this.createUnlessExists(
+      orderId,
+      amountCents,
+      PaymentStatus.PROCESSING,
+    );
   }
 
   createCancelledTombstone(orderId: string): Promise<Payment | null> {
@@ -91,10 +98,10 @@ export class InMemoryPaymentRepository implements PaymentRepository {
 
   private createUnlessExists(
     orderId: string,
-    amount: number | null,
+    amountCents: number | null,
     status: PaymentStatus,
   ): Promise<Payment | null> {
     if (this.byOrder.has(orderId)) return Promise.resolve(null);
-    return Promise.resolve(this.seed(orderId, status, { amount }));
+    return Promise.resolve(this.seed(orderId, status, { amountCents }));
   }
 }

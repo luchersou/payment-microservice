@@ -9,7 +9,7 @@ describe('CreateOrderUseCase', () => {
   let metrics: ReturnType<typeof makeMetrics>;
   let useCase: CreateOrderUseCase;
 
-  const payload = { orderId: 'order-1', userId: 'user-1', total: 100 };
+  const payload = { orderId: 'order-1', userId: 'user-1', totalCents: 100 };
 
   beforeEach(() => {
     orders = new InMemoryOrderRepository();
@@ -26,7 +26,7 @@ describe('CreateOrderUseCase', () => {
     expect(orders.stored('order-1')).toEqual({
       id: 'order-1',
       userId: 'user-1',
-      total: 100,
+      totalCents: 100,
       status: OrderStatus.PENDING_PAYMENT,
     });
     expect(orders.events).toEqual([
@@ -34,7 +34,7 @@ describe('CreateOrderUseCase', () => {
         type: 'OrderCreated',
         orderId: 'order-1',
         userId: 'user-1',
-        total: 100,
+        totalCents: 100,
       },
     ]);
     expect(metrics.incrementOrdersCreated).toHaveBeenCalledTimes(1);
@@ -70,7 +70,7 @@ describe('CreateOrderUseCase', () => {
   });
 
   it('generates an id for requests published before the gateway sent one', async () => {
-    await useCase.execute({ userId: 'user-1', total: 100 });
+    await useCase.execute({ userId: 'user-1', totalCents: 100 });
 
     expect(orders.size).toBe(1);
   });

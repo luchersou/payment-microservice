@@ -11,7 +11,11 @@ describe('ProcessPaymentUseCase', () => {
   let metrics: ReturnType<typeof makeMetrics>;
   let useCase: ProcessPaymentUseCase;
 
-  const orderCreated = { orderId: 'order-1', userId: 'user-1', total: 100 };
+  const orderCreated = {
+    orderId: 'order-1',
+    userId: 'user-1',
+    totalCents: 100,
+  };
   const status = () => payments.stored('order-1')?.status;
   const eventTypes = () => payments.events.map((e) => e.type);
 
@@ -34,7 +38,7 @@ describe('ProcessPaymentUseCase', () => {
   });
 
   describe('execute (OrderCreated)', () => {
-    it('charges the amount with the paymentId as idempotency key and approves', async () => {
+    it('charges the amountCents with the paymentId as idempotency key and approves', async () => {
       await useCase.execute(orderCreated);
 
       const payment = payments.stored('order-1')!;
@@ -119,7 +123,7 @@ describe('ProcessPaymentUseCase', () => {
     });
 
     it('never charges a tombstone (cancelled before OrderCreated)', async () => {
-      payments.seed('order-1', PaymentStatus.CANCELLED, { amount: null });
+      payments.seed('order-1', PaymentStatus.CANCELLED, { amountCents: null });
 
       await useCase.execute(orderCreated);
 

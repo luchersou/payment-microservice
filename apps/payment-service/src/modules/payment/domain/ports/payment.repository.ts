@@ -7,7 +7,10 @@ export interface PaymentRepository {
   findByOrderId(orderId: string): Promise<Payment | null>;
 
   /** New PROCESSING payment, or null if the order already has a payment */
-  createProcessing(orderId: string, amount: number): Promise<Payment | null>;
+  createProcessing(
+    orderId: string,
+    amountCents: number,
+  ): Promise<Payment | null>;
 
   /** CANCELLED tombstone, or null if the order already has a payment */
   createCancelledTombstone(orderId: string): Promise<Payment | null>;

@@ -17,10 +17,13 @@ export class PrismaPaymentRepository implements PaymentRepository {
     return record ? toDomain(record) : null;
   }
 
-  createProcessing(orderId: string, amount: number): Promise<Payment | null> {
+  createProcessing(
+    orderId: string,
+    amountCents: number,
+  ): Promise<Payment | null> {
     return this.createUnlessExists({
       orderId,
-      amount,
+      amountCents,
       status: PaymentStatus.PROCESSING,
     });
   }
@@ -78,7 +81,7 @@ export class PrismaPaymentRepository implements PaymentRepository {
   /** The unique orderId turns a concurrent or repeated create into null */
   private async createUnlessExists(data: {
     orderId: string;
-    amount?: number;
+    amountCents?: number;
     status: PaymentStatus;
   }): Promise<Payment | null> {
     try {
@@ -94,7 +97,7 @@ function toDomain(record: PaymentRecord): Payment {
   return Payment.fromProps({
     id: record.id,
     orderId: record.orderId,
-    amount: record.amount,
+    amountCents: record.amountCents,
     status: record.status,
     failureReason: record.failureReason,
   });

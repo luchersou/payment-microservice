@@ -1,11 +1,11 @@
 import { InvalidPaymentTransitionError, Payment } from './payment';
 import { PaymentStatus } from './payment-status';
 
-const payment = (status: PaymentStatus, amount: number | null = 100) =>
+const payment = (status: PaymentStatus, amountCents: number | null = 100) =>
   Payment.fromProps({
     id: 'pay-1',
     orderId: 'order-1',
-    amount,
+    amountCents,
     status,
     failureReason: null,
   });

@@ -19,7 +19,11 @@ export function toOrderOutboxRecord(event: OrderEvent): OutboxRecord {
         Exchanges.ORDERS,
         RoutingKeys.ORDER_CREATED,
         new OrderCreatedEvent(
-          { orderId: event.orderId, userId: event.userId, total: event.total },
+          {
+            orderId: event.orderId,
+            userId: event.userId,
+            totalCents: event.totalCents,
+          },
           correlationId,
         ),
       );

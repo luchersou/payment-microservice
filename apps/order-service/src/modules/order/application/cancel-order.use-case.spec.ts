@@ -47,7 +47,7 @@ describe('CancelOrderUseCase', () => {
     expect(orders.stored('missing')).toEqual({
       id: 'missing',
       userId: null,
-      total: null,
+      totalCents: null,
       status: OrderStatus.CANCELLED,
     });
     expect(eventTypes()).toEqual(['OrderCancelled']);
@@ -66,7 +66,7 @@ describe('CancelOrderUseCase', () => {
     await createOrder.execute({
       orderId: 'order-1',
       userId: 'user-1',
-      total: 100,
+      totalCents: 100,
     });
 
     expect(orders.stored('order-1')?.status).toBe(OrderStatus.CANCELLED);

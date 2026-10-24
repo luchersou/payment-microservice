@@ -16,7 +16,7 @@ export class InMemoryOrderRepository implements OrderRepository {
   private readonly byId = new Map<string, OrderProps>();
 
   seed(id: string, status: OrderStatus): Order {
-    const props: OrderProps = { id, userId: 'user-1', total: 100, status };
+    const props: OrderProps = { id, userId: 'user-1', totalCents: 100, status };
     this.byId.set(id, props);
     return Order.fromProps(props);
   }
@@ -45,7 +45,7 @@ export class InMemoryOrderRepository implements OrderRepository {
     this.byId.set(order.id, {
       id: order.id,
       userId: order.userId,
-      total: order.total,
+      totalCents: order.totalCents,
       status: order.status,
     });
     this.events.push(...events);

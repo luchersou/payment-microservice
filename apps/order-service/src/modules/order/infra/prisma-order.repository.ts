@@ -26,7 +26,7 @@ export class PrismaOrderRepository implements OrderRepository {
           data: {
             id: order.id,
             userId: order.userId,
-            total: order.total,
+            totalCents: order.totalCents,
             status: order.status,
           },
         });
@@ -75,7 +75,7 @@ function toDomain(record: OrderRecord): Order {
   return Order.fromProps({
     id: record.id,
     userId: record.userId,
-    total: record.total,
+    totalCents: record.totalCents,
     status: record.status,
   });
 }

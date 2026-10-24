@@ -52,7 +52,7 @@ function toResponseDto(order: Order): OrderResponseDto {
   return {
     id: order.id,
     userId: order.userId,
-    total: order.total,
+    totalCents: order.totalCents,
     status: order.status,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,

@@ -43,7 +43,7 @@ export class ProcessPaymentUseCase {
 
     const created = await this.payments.createProcessing(
       payload.orderId,
-      payload.total,
+      payload.totalCents,
     );
     const payment =
       created ?? (await this.payments.findByOrderId(payload.orderId));
@@ -94,9 +94,9 @@ export class ProcessPaymentUseCase {
   }
 
   private async charge(payment: Payment) {
-    if (payment.amount === null) {
+    if (payment.amountCents === null) {
       // Only tombstones lack an amount, and they are CANCELLED, never charged
-      throw new Error(`Payment ${payment.id} has no amount to charge`);
+      throw new Error(`Payment ${payment.id} has no amountCents to charge`);
     }
 
     let result: ChargeResult;
@@ -106,7 +106,7 @@ export class ProcessPaymentUseCase {
     // outbox event are one transaction), so the retry resumes the payment
     // and charges again with the same paymentId, which the gateway dedupes.
     try {
-      result = await this.gateway.charge(payment.id, payment.amount);
+      result = await this.gateway.charge(payment.id, payment.amountCents);
     } catch (error) {
       this.logger.error(
         `❌ Unexpected gateway error for order ${payment.orderId}`,

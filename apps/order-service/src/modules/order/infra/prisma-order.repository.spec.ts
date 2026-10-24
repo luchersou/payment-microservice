@@ -90,7 +90,7 @@ describe('PrismaOrderRepository', () => {
         exchange: Exchanges.ORDERS,
         routingKey: RoutingKeys.ORDER_CREATED,
         payload: expect.objectContaining({
-          payload: { orderId: 'o', userId: 'u', total: 100 },
+          payload: { orderId: 'o', userId: 'u', totalCents: 100 },
         }),
       }),
     ]);
@@ -125,7 +125,7 @@ describe('PrismaOrderRepository', () => {
     fake.rows.set('o', {
       id: 'o',
       userId: 'u',
-      total: 100,
+      totalCents: 100,
       status: OrderStatus.PAID,
     });
     const order = (await repository.findById('o'))!;
@@ -151,7 +151,7 @@ describe('PrismaOrderRepository', () => {
     fake.rows.set('o', {
       id: 'o',
       userId: 'u',
-      total: 100,
+      totalCents: 100,
       status: OrderStatus.PENDING_PAYMENT,
     });
     const order = (await repository.findById('o'))!;

@@ -13,7 +13,7 @@ export type ChargeResult =
  * or refund the customer twice.
  */
 export interface PaymentGateway {
-  charge(paymentId: string, amount: number): Promise<ChargeResult>;
+  charge(paymentId: string, amountCents: number): Promise<ChargeResult>;
   /**
    * Gives back a successful charge. Returns false, doing nothing, when there
    * is no charge to give back (never charged, declined, already refunded),

@@ -10,14 +10,19 @@ export class InvalidOrderTransitionError extends Error {
 
 /** What happened to an order that the rest of the saga must hear about */
 export type OrderEvent =
-  | { type: 'OrderCreated'; orderId: string; userId: string; total: number }
+  | {
+      type: 'OrderCreated';
+      orderId: string;
+      userId: string;
+      totalCents: number;
+    }
   | { type: 'OrderCancelled'; orderId: string; cancelledAt: Date };
 
 export interface OrderProps {
   id: string;
-  /** userId and total are null for a tombstone (cancelled before creation) */
+  /** Null for a tombstone (cancelled before creation); totalCents in cents */
   userId: string | null;
-  total: number | null;
+  totalCents: number | null;
   status: OrderStatus;
 }
 
@@ -42,12 +47,17 @@ export class Order {
   }
 
   /** New order waiting for its payment; announces OrderCreated */
-  static create(id: string, userId: string, total: number): Order {
+  static create(id: string, userId: string, totalCents: number): Order {
     const order = new Order(
-      { id, userId, total, status: OrderStatus.PENDING_PAYMENT },
+      { id, userId, totalCents, status: OrderStatus.PENDING_PAYMENT },
       true,
     );
-    order.events.push({ type: 'OrderCreated', orderId: id, userId, total });
+    order.events.push({
+      type: 'OrderCreated',
+      orderId: id,
+      userId,
+      totalCents,
+    });
     return order;
   }
 
@@ -58,7 +68,7 @@ export class Order {
    */
   static cancelledTombstone(id: string): Order {
     const order = new Order(
-      { id, userId: null, total: null, status: OrderStatus.CANCELLED },
+      { id, userId: null, totalCents: null, status: OrderStatus.CANCELLED },
       true,
     );
     order.recordCancelled();
@@ -77,8 +87,8 @@ export class Order {
     return this.props.userId;
   }
 
-  get total() {
-    return this.props.total;
+  get totalCents() {
+    return this.props.totalCents;
   }
 
   get status() {

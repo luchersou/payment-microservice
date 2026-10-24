@@ -64,14 +64,14 @@ export class PaymentQueriesService {
     const grouped = await this.prisma.payment.groupBy({
       by: ['status'],
       _count: { status: true },
-      _sum: { amount: true },
+      _sum: { amountCents: true },
     });
 
     return {
       byStatus: grouped.map((item) => ({
         status: item.status,
         count: item._count.status,
-        totalAmount: item._sum.amount || 0,
+        totalAmountCents: item._sum.amountCents || 0,
       })),
     };
   }
@@ -81,7 +81,7 @@ function toResponseDto(payment: Payment): PaymentResponseDto {
   return {
     id: payment.id,
     orderId: payment.orderId,
-    amount: payment.amount,
+    amountCents: payment.amountCents,
     status: payment.status,
     failureReason: payment.failureReason,
     createdAt: payment.createdAt,

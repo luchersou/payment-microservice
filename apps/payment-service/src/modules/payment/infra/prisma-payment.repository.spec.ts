@@ -12,7 +12,7 @@ jest.mock('@payment/prisma/prisma.service', () => ({
 type Row = {
   id: string;
   orderId: string;
-  amount: number | null;
+  amountCents: number | null;
   status: PaymentStatus;
   failureReason: string | null;
 };
@@ -33,7 +33,7 @@ function makeFakePrisma() {
         }
         const row: Row = {
           id: `pay-${++seq}`,
-          amount: null,
+          amountCents: null,
           failureReason: null,
           status: PaymentStatus.PROCESSING,
           ...data,
@@ -160,7 +160,7 @@ describe('PrismaPaymentRepository', () => {
     expect(tombstone).toMatchObject({
       orderId: 'order-2',
       status: PaymentStatus.CANCELLED,
-      amount: null,
+      amountCents: null,
       mayHaveBeenCharged: false,
     });
   });

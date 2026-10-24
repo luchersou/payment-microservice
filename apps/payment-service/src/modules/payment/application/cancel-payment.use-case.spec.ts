@@ -84,7 +84,7 @@ describe('CancelPaymentUseCase', () => {
 
     expect(payments.stored('order-1')).toMatchObject({
       status: PaymentStatus.CANCELLED,
-      amount: null,
+      amountCents: null,
     });
     expect(metrics.incrementPaymentsCancelled).toHaveBeenCalledTimes(1);
     expect(payments.events).toHaveLength(0);
@@ -101,7 +101,7 @@ describe('CancelPaymentUseCase', () => {
     await processPayment.execute({
       orderId: 'order-1',
       userId: 'user-1',
-      total: 100,
+      totalCents: 100,
     });
 
     expect(gateway.charge).not.toHaveBeenCalled();

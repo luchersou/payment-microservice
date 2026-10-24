@@ -10,7 +10,8 @@ export interface CreateOrderRequestedPayload {
    */
   orderId?: string;
   userId: string;
-  total: number;
+  /** Integer amount in cents (e.g. 1999 = 19.99), never a float */
+  totalCents: number;
 }
 
 export class CreateOrderRequestedEvent extends BaseEvent<

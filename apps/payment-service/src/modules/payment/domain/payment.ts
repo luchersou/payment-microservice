@@ -18,7 +18,7 @@ export interface PaymentProps {
   id: string;
   orderId: string;
   /** Null for a tombstone: the order was cancelled before OrderCreated */
-  amount: number | null;
+  amountCents: number | null;
   status: PaymentStatus;
   failureReason: string | null;
 }
@@ -52,8 +52,8 @@ export class Payment {
     return this.props.orderId;
   }
 
-  get amount() {
-    return this.props.amount;
+  get amountCents() {
+    return this.props.amountCents;
   }
 
   get status() {
@@ -69,7 +69,7 @@ export class Payment {
    * tombstone (cancelled before OrderCreated) never was.
    */
   get mayHaveBeenCharged(): boolean {
-    return this.props.amount !== null;
+    return this.props.amountCents !== null;
   }
 
   approve() {

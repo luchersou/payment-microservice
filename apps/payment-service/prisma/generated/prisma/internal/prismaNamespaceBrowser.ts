@@ -74,7 +74,7 @@ export type TransactionIsolationLevel = (typeof TransactionIsolationLevel)[keyof
 export const PaymentScalarFieldEnum = {
   id: 'id',
   orderId: 'orderId',
-  amount: 'amount',
+  amountCents: 'amountCents',
   status: 'status',
   failureReason: 'failureReason',
   createdAt: 'createdAt',

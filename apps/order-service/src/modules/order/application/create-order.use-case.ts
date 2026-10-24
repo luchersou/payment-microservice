@@ -32,7 +32,7 @@ export class CreateOrderUseCase {
   async execute(payload: CreateOrderRequestedPayload) {
     // Fallback for requests published before the gateway sent orderId
     const orderId = payload.orderId ?? randomUUID();
-    const order = Order.create(orderId, payload.userId, payload.total);
+    const order = Order.create(orderId, payload.userId, payload.totalCents);
 
     if (await this.orders.create(order)) {
       this.logger.log(`✅ Order ${orderId} persisted`);
