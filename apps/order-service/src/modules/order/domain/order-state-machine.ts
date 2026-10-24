@@ -8,6 +8,9 @@ import { OrderStatus } from '@order/prisma/generated/prisma/enums';
  *        ├──► CANCELLED (user cancel)
  *        └──► FAILED    (payment declined or failed)
  *
+ * An order may also be created directly as CANCELLED (tombstone) when the
+ * cancel request is handled before the create request.
+ *
  * CANCELLED and FAILED are terminal.
  */
 export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {

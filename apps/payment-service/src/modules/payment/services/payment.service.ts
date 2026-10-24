@@ -8,7 +8,7 @@ import { PrismaService } from '@payment/prisma/prisma.service';
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
 import { MetricNames } from '@common/metrics';
-import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
 import {
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -26,18 +26,7 @@ import { PaymentResponseDto } from '../dto/payment-response.dto';
 import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
 
 const DEFAULT_DECLINE_REASON = 'Insufficient funds';
-
-/**
- * OrderCreated and OrderCancelled arrive on separate queues, so a cancel can
- * be processed before the payment exists. Throwing lets the retry error
- * handler redeliver it once OrderCreated has been handled.
- */
-export class PaymentNotFoundYetError extends Error {
-  constructor(orderId: string) {
-    super(`Payment for order ${orderId} not found yet`);
-    this.name = PaymentNotFoundYetError.name;
-  }
-}
+const UNKNOWN_FAILURE_REASON = 'Unknown error';
 
 /** The payment changed between read and conditional write; retry re-reads it */
 export class ConcurrentPaymentUpdateError extends Error {
@@ -133,6 +122,8 @@ export class PaymentService {
    * Idempotent on orderId:
    * - new payment → charge it
    * - existing PROCESSING payment (previous attempt crashed mid-way) → resume
+   * - CANCELLED payment (tombstone: the order was cancelled first) → do
+   *   nothing, the customer must not be charged
    * - already decided payment (previous attempt failed to publish) →
    *   republish its result; the order service handles results idempotently
    */
@@ -140,6 +131,13 @@ export class PaymentService {
     this.logger.log(`💳 Processing payment for order ${payload.orderId}`);
 
     const { payment, created } = await this.findOrCreatePayment(payload);
+
+    if (payment.status === PaymentStatus.CANCELLED) {
+      this.logger.warn(
+        `⚠️ Order ${payload.orderId} was cancelled before payment, not charging`,
+      );
+      return;
+    }
 
     if (payment.status !== PaymentStatus.PROCESSING) {
       this.logger.warn(
@@ -158,6 +156,12 @@ export class PaymentService {
     await this.processPayment(payment);
   }
 
+  /**
+   * OrderCreated and OrderCancelled arrive on separate queues, so the cancel
+   * may be handled first. Instead of waiting for the payment (a bounded retry
+   * that, once exhausted, let the order be charged anyway), a CANCELLED
+   * tombstone is written so a later OrderCreated finds it and never charges.
+   */
   async handleOrderCancelled(payload: OrderCancelledPayload) {
     this.logger.log(`🚫 Cancelling payment for order ${payload.orderId}`);
 
@@ -165,11 +169,17 @@ export class PaymentService {
       where: { orderId: payload.orderId },
     });
 
-    if (!payment) {
-      throw new PaymentNotFoundYetError(payload.orderId);
+    if (payment) {
+      await this.cancelPaymentByStatus(payment);
+      return;
     }
 
-    await this.cancelPaymentByStatus(payment);
+    const existing = await this.createCancelledTombstone(payload.orderId);
+
+    if (existing) {
+      // OrderCreated created the payment between the read and the write
+      await this.cancelPaymentByStatus(existing);
+    }
   }
 
   async saveFailedMessage(data: {
@@ -232,6 +242,30 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Returns null when the tombstone was written, or the payment that
+   * OrderCreated created concurrently (unique orderId) when it lost the race.
+   */
+  private async createCancelledTombstone(
+    orderId: string,
+  ): Promise<Payment | null> {
+    try {
+      await this.prisma.payment.create({
+        data: { orderId, status: PaymentStatus.CANCELLED },
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      return this.prisma.payment.findUniqueOrThrow({ where: { orderId } });
+    }
+
+    this.metrics.incrementPaymentsCancelled();
+    this.logger.log(
+      `🪦 Payment for order ${orderId} recorded as CANCELLED before OrderCreated`,
+    );
+    return null;
+  }
+
   private async processPayment(payment: Payment) {
     let result: { approved: boolean; reason?: string };
 
@@ -267,16 +301,17 @@ export class PaymentService {
         return;
 
       case PaymentStatus.PROCESSING:
-        await this.transitionOrThrow(payment, PaymentStatus.DECLINED);
-        this.metrics.incrementPaymentsDeclined('order_cancelled');
+        await this.transitionOrThrow(payment, PaymentStatus.CANCELLED);
+        this.metrics.incrementPaymentsCancelled();
         this.logger.log(
-          `✅ Payment ${payment.id} declined due to order cancellation`,
+          `✅ Payment ${payment.id} cancelled due to order cancellation`,
         );
         return;
 
       case PaymentStatus.DECLINED:
       case PaymentStatus.FAILED:
       case PaymentStatus.REFUNDED:
+      case PaymentStatus.CANCELLED:
         this.logger.log(
           `ℹ️ Payment ${payment.id} already ${payment.status}, skipping`,
         );
@@ -313,9 +348,14 @@ export class PaymentService {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.PAYMENT_DECLINE_DURATION,
     );
+    const failureReason = reason ?? DEFAULT_DECLINE_REASON;
 
     try {
-      if (!(await this.transition(payment, PaymentStatus.DECLINED))) {
+      if (
+        !(await this.transition(payment, PaymentStatus.DECLINED, {
+          failureReason,
+        }))
+      ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing, not declining`,
         );
@@ -325,7 +365,7 @@ export class PaymentService {
       this.metrics.incrementPaymentsDeclined(reason ?? 'insufficient_funds');
       this.logger.warn(`⚠️ Payment declined for order ${payment.orderId}`);
 
-      await this.publishDeclined(payment, reason);
+      await this.publishDeclined({ ...payment, failureReason });
     } finally {
       endTimer();
     }
@@ -335,9 +375,15 @@ export class PaymentService {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.PAYMENT_FAILURE_DURATION,
     );
+    const failureReason =
+      error instanceof Error ? error.message : UNKNOWN_FAILURE_REASON;
 
     try {
-      if (!(await this.transition(payment, PaymentStatus.FAILED))) {
+      if (
+        !(await this.transition(payment, PaymentStatus.FAILED, {
+          failureReason,
+        }))
+      ) {
         this.logger.warn(
           `⚠️ Payment ${payment.id} changed while processing, not failing`,
         );
@@ -347,10 +393,7 @@ export class PaymentService {
       this.metrics.incrementPaymentsFailed();
       this.logger.error(`❌ Payment failed for order ${payment.orderId}`);
 
-      await this.publishFailed(
-        payment,
-        error instanceof Error ? error.message : undefined,
-      );
+      await this.publishFailed({ ...payment, failureReason });
     } finally {
       endTimer();
     }
@@ -369,7 +412,7 @@ export class PaymentService {
       case PaymentStatus.FAILED:
         return this.publishFailed(payment);
       default:
-        // REFUNDED: the order was already cancelled, nothing to report
+        // REFUNDED / CANCELLED: the order was cancelled, nothing to report
         return;
     }
   }
@@ -377,45 +420,52 @@ export class PaymentService {
   private async publishApproved(payment: Payment) {
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_APPROVED,
       new PaymentApprovedEvent(
         { orderId: payment.orderId, transactionId: payment.id },
         correlationId,
       ),
-      { correlationId },
     );
   }
 
-  private async publishDeclined(payment: Payment, reason?: string) {
+  // The reason is read from the record so a republished result (redelivery)
+  // carries the original one. The fallbacks only cover payments decided
+  // before failureReason was persisted.
+
+  private async publishDeclined(payment: Payment) {
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_DECLINED,
       new PaymentDeclinedEvent(
         {
           orderId: payment.orderId,
-          reason: reason ?? DEFAULT_DECLINE_REASON,
+          reason: payment.failureReason ?? DEFAULT_DECLINE_REASON,
         },
         correlationId,
       ),
-      { correlationId },
     );
   }
 
-  private async publishFailed(payment: Payment, error?: string) {
+  private async publishFailed(payment: Payment) {
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.PAYMENTS,
       RoutingKeys.PAYMENT_FAILED,
       new PaymentFailedEvent(
-        { orderId: payment.orderId, error: error ?? 'Unknown error' },
+        {
+          orderId: payment.orderId,
+          error: payment.failureReason ?? UNKNOWN_FAILURE_REASON,
+        },
         correlationId,
       ),
-      { correlationId },
     );
   }
 
@@ -426,11 +476,14 @@ export class PaymentService {
   /**
    * Atomic conditional update: succeeds only if the payment is still in the
    * status it was read with, so a concurrent cancel and approval cannot both
-   * win. Returns whether this call performed the transition.
+   * win. `data` is written in the same update (e.g. failureReason), so it is
+   * never out of sync with the status. Returns whether this call performed
+   * the transition.
    */
   private async transition(
     payment: Payment,
     to: PaymentStatus,
+    data: Pick<Partial<Payment>, 'failureReason'> = {},
   ): Promise<boolean> {
     if (!canTransition(payment.status, to)) {
       return false;
@@ -438,7 +491,7 @@ export class PaymentService {
 
     const { count } = await this.prisma.payment.updateMany({
       where: { id: payment.id, status: payment.status },
-      data: { status: to },
+      data: { ...data, status: to },
     });
 
     return count === 1;
@@ -456,6 +509,7 @@ export class PaymentService {
       orderId: payment.orderId,
       amount: payment.amount,
       status: payment.status,
+      failureReason: payment.failureReason,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
     };

@@ -5,14 +5,14 @@ import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import { CancelReason } from '@contracts/order-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
-import { OrderNotFoundYetError, OrderService } from './order.service';
+import { OrderService } from './order.service';
 
 jest.mock('@order/prisma/prisma.service', () => ({ PrismaService: class {} }));
 
 type FakeOrder = {
   id: string;
-  userId: string;
-  total: number;
+  userId?: string | null;
+  total?: number | null;
   status: OrderStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -117,7 +117,7 @@ describe('OrderService', () => {
         expect.objectContaining({
           payload: { orderId: 'order-1', userId: 'user-1', total: 100 },
         }),
-        expect.anything(),
+        expect.objectContaining({ persistent: true }),
       );
     });
 
@@ -220,10 +220,43 @@ describe('OrderService', () => {
       },
     );
 
-    it('throws a retryable error when the order does not exist yet', async () => {
-      await expect(service.cancelByUser('missing')).rejects.toBeInstanceOf(
-        OrderNotFoundYetError,
+    it('records a CANCELLED tombstone when the order does not exist yet', async () => {
+      await service.cancelByUser('missing');
+
+      const tombstone = fake.orders.get('missing');
+      expect(tombstone?.status).toBe(OrderStatus.CANCELLED);
+      expect(tombstone?.userId).toBeUndefined();
+      expect(tombstone?.total).toBeUndefined();
+      expect(metrics.incrementOrdersCancelled).toHaveBeenCalledWith(
+        CancelReason.USER_REQUESTED,
       );
+    });
+
+    it('a create request handled after the tombstone never publishes OrderCreated', async () => {
+      await service.cancelByUser('order-1');
+      await service.createOrder({
+        orderId: 'order-1',
+        userId: 'user-1',
+        total: 100,
+      });
+
+      expect(fake.orders.get('order-1')?.status).toBe(OrderStatus.CANCELLED);
+      expect(metrics.incrementOrdersCreated).not.toHaveBeenCalled();
+      expect(
+        amqp.publish.mock.calls.map((call: unknown[]) => call[1]),
+      ).not.toContain(RoutingKeys.ORDER_CREATED);
+    });
+
+    it('cancels the order the create request persisted between the update and the tombstone insert', async () => {
+      fake.seed('o', OrderStatus.PENDING_PAYMENT);
+      fake.prisma.order.updateMany.mockResolvedValueOnce({ count: 0 });
+      fake.prisma.order.findUnique.mockResolvedValueOnce(null);
+
+      await service.cancelByUser('o');
+
+      expect(fake.orders.size).toBe(1);
+      expect(fake.orders.get('o')?.status).toBe(OrderStatus.CANCELLED);
+      expect(metrics.incrementOrdersCancelled).toHaveBeenCalledTimes(1);
     });
 
     it('republishes without counting again when already cancelled', async () => {
@@ -245,29 +278,29 @@ describe('OrderService', () => {
     });
   });
 
-  describe('cancelByPaymentDeclined', () => {
-    it('moves PENDING_PAYMENT to FAILED', async () => {
+  describe('failOrder (PaymentDeclined / PaymentFailed)', () => {
+    it('fails a PENDING_PAYMENT order without publishing anything', async () => {
       fake.seed('o', OrderStatus.PENDING_PAYMENT);
 
-      await service.cancelByPaymentDeclined('o');
+      await service.failOrder('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.FAILED);
-      expect(amqp.publish).toHaveBeenCalledTimes(1);
+      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(metrics.incrementOrdersCancelled).not.toHaveBeenCalled();
     });
 
     it('never marks a PAID order as FAILED', async () => {
       fake.seed('o', OrderStatus.PAID);
 
-      await service.cancelByPaymentDeclined('o');
+      await service.failOrder('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.PAID);
       expect(amqp.publish).not.toHaveBeenCalled();
     });
 
     it('ignores an unknown order', async () => {
-      await expect(
-        service.cancelByPaymentDeclined('missing'),
-      ).resolves.toBeUndefined();
+      await expect(service.failOrder('missing')).resolves.toBeUndefined();
+      expect(fake.orders.size).toBe(0);
     });
   });
 });

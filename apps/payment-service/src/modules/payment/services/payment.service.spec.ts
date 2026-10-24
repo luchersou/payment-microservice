@@ -7,7 +7,6 @@ import { CancelReason } from '@contracts/order-events';
 import { PaymentMetricsService } from '../../metrics/metrics.service';
 import {
   ConcurrentPaymentUpdateError,
-  PaymentNotFoundYetError,
   PaymentService,
 } from './payment.service';
 
@@ -18,8 +17,9 @@ jest.mock('@payment/prisma/prisma.service', () => ({
 type FakePayment = {
   id: string;
   orderId: string;
-  amount: number;
+  amount?: number | null;
   status: PaymentStatus;
+  failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -66,7 +66,7 @@ function makeFakePrisma() {
         data,
       }: {
         where: { id: string; status: PaymentStatus };
-        data: { status: PaymentStatus };
+        data: { status: PaymentStatus; failureReason?: string };
       }) => {
         const current = payments.get(where.id);
         if (!current || current.status !== where.status) {
@@ -78,12 +78,17 @@ function makeFakePrisma() {
     ),
   };
 
-  const seed = (orderId: string, status: PaymentStatus) => {
+  const seed = (
+    orderId: string,
+    status: PaymentStatus,
+    extra: Partial<FakePayment> = {},
+  ) => {
     const p = {
       id: `pay-${++seq}`,
       orderId,
       amount: 100,
       status,
+      ...extra,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -101,6 +106,7 @@ function makeMetrics() {
     incrementPaymentsDeclined: jest.fn(),
     incrementPaymentsFailed: jest.fn(),
     incrementPaymentsRefunded: jest.fn(),
+    incrementPaymentsCancelled: jest.fn(),
   };
 }
 
@@ -130,6 +136,9 @@ describe('PaymentService', () => {
   const publishedRoutingKeys = () =>
     amqp.publish.mock.calls.map((call: unknown[]) => call[1]);
 
+  const publishedPayload = () =>
+    (amqp.publish.mock.calls[0][2] as { payload: unknown }).payload;
+
   describe('handleOrderCreated', () => {
     it('approves and publishes PaymentApproved', async () => {
       await service.handleOrderCreated(orderCreated);
@@ -141,7 +150,7 @@ describe('PaymentService', () => {
         expect.objectContaining({
           payload: expect.objectContaining({ orderId: 'order-1' }),
         }),
-        expect.anything(),
+        expect.objectContaining({ persistent: true }),
       );
     });
 
@@ -154,7 +163,12 @@ describe('PaymentService', () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.DECLINED);
+      expect(fake.byOrder('order-1')?.failureReason).toBe('No funds');
       expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_DECLINED]);
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        reason: 'No funds',
+      });
     });
 
     it('marks FAILED only on gateway errors', async () => {
@@ -163,7 +177,40 @@ describe('PaymentService', () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.FAILED);
+      expect(fake.byOrder('order-1')?.failureReason).toBe('gateway timeout');
       expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_FAILED]);
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        error: 'gateway timeout',
+      });
+    });
+
+    it('republishes a DECLINED result with the persisted reason', async () => {
+      fake.seed('order-1', PaymentStatus.DECLINED, {
+        failureReason: 'Card expired',
+      });
+
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway).not.toHaveBeenCalled();
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        reason: 'Card expired',
+      });
+    });
+
+    it('republishes a FAILED result with the persisted reason', async () => {
+      fake.seed('order-1', PaymentStatus.FAILED, {
+        failureReason: 'gateway timeout',
+      });
+
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway).not.toHaveBeenCalled();
+      expect(publishedPayload()).toEqual({
+        orderId: 'order-1',
+        error: 'gateway timeout',
+      });
     });
 
     it('keeps APPROVED and rethrows when publishing the result fails', async () => {
@@ -196,27 +243,32 @@ describe('PaymentService', () => {
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
     });
 
-    it('does not publish for a REFUNDED payment', async () => {
-      fake.seed('order-1', PaymentStatus.REFUNDED);
+    it.each([PaymentStatus.REFUNDED, PaymentStatus.CANCELLED])(
+      'does not charge nor publish for a %s payment',
+      async (status) => {
+        fake.seed('order-1', status);
 
-      await service.handleOrderCreated(orderCreated);
+        await service.handleOrderCreated(orderCreated);
 
-      expect(amqp.publish).not.toHaveBeenCalled();
-    });
+        expect(gateway).not.toHaveBeenCalled();
+        expect(amqp.publish).not.toHaveBeenCalled();
+        expect(fake.byOrder('order-1')?.status).toBe(status);
+      },
+    );
 
     it('does not approve if the order was cancelled during the gateway call', async () => {
       gateway.mockImplementation(() => {
         const current = fake.byOrder('order-1')!;
         fake.payments.set(current.id, {
           ...current,
-          status: PaymentStatus.DECLINED,
+          status: PaymentStatus.CANCELLED,
         });
         return Promise.resolve({ approved: true });
       });
 
       await service.handleOrderCreated(orderCreated);
 
-      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.DECLINED);
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
       expect(amqp.publish).not.toHaveBeenCalled();
       expect(metrics.incrementPaymentsApproved).not.toHaveBeenCalled();
     });
@@ -238,18 +290,21 @@ describe('PaymentService', () => {
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
     });
 
-    it('declines a PROCESSING payment', async () => {
+    it('cancels a PROCESSING payment', async () => {
       fake.seed('order-1', PaymentStatus.PROCESSING);
 
       await service.handleOrderCancelled(cancelled);
 
-      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.DECLINED);
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
+      expect(metrics.incrementPaymentsCancelled).toHaveBeenCalledTimes(1);
+      expect(metrics.incrementPaymentsDeclined).not.toHaveBeenCalled();
     });
 
     it.each([
       PaymentStatus.DECLINED,
       PaymentStatus.FAILED,
       PaymentStatus.REFUNDED,
+      PaymentStatus.CANCELLED,
     ])('leaves a %s payment untouched', async (status) => {
       fake.seed('order-1', status);
 
@@ -259,10 +314,34 @@ describe('PaymentService', () => {
       expect(fake.prisma.payment.updateMany).not.toHaveBeenCalled();
     });
 
-    it('throws a retryable error when the payment does not exist yet', async () => {
-      await expect(
-        service.handleOrderCancelled(cancelled),
-      ).rejects.toBeInstanceOf(PaymentNotFoundYetError);
+    it('writes a CANCELLED tombstone when the payment does not exist yet', async () => {
+      await service.handleOrderCancelled(cancelled);
+
+      const tombstone = fake.byOrder('order-1');
+      expect(tombstone?.status).toBe(PaymentStatus.CANCELLED);
+      expect(tombstone?.amount).toBeUndefined();
+      expect(metrics.incrementPaymentsCancelled).toHaveBeenCalledTimes(1);
+      expect(amqp.publish).not.toHaveBeenCalled();
+    });
+
+    it('never charges an order whose OrderCreated arrives after the cancel', async () => {
+      await service.handleOrderCancelled(cancelled);
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway).not.toHaveBeenCalled();
+      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.payments.size).toBe(1);
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
+    });
+
+    it('cancels the payment OrderCreated created between the read and the tombstone write', async () => {
+      fake.seed('order-1', PaymentStatus.PROCESSING);
+      fake.prisma.payment.findUnique.mockResolvedValueOnce(null);
+
+      await service.handleOrderCancelled(cancelled);
+
+      expect(fake.payments.size).toBe(1);
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
     });
 
     it('throws a retryable error when the status changed concurrently', async () => {

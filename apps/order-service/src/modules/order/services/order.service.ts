@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
-import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
+import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
 import {
   CancelReason,
   CreateOrderRequestedPayload,
@@ -20,18 +20,6 @@ import { OrderMetricsService } from '../../metrics/metrics.service';
 import { sourceStatusesFor } from '../domain/order-state-machine';
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
-
-/**
- * Thrown when a cancel request arrives before the order is persisted
- * (the gateway returns the orderId before the order is created).
- * The retry error handler redelivers the message later.
- */
-export class OrderNotFoundYetError extends Error {
-  constructor(orderId: string) {
-    super(`Order ${orderId} not found yet`);
-    this.name = OrderNotFoundYetError.name;
-  }
-}
 
 @Injectable()
 export class OrderService {
@@ -92,6 +80,9 @@ export class OrderService {
    * existing order and republishes OrderCreated while it is still pending,
    * covering the case where the previous attempt persisted but failed to
    * publish. The payment service is idempotent on orderId.
+   *
+   * If the order was cancelled before this request was handled, a CANCELLED
+   * tombstone already holds the id, so OrderCreated is never published.
    */
   async createOrder(payload: CreateOrderRequestedPayload) {
     // Fallback for requests published before the gateway sent orderId
@@ -114,14 +105,16 @@ export class OrderService {
 
     const correlationId = CorrelationIdService.getId();
 
-    await this.amqpConnection.publish(
+    await publishEvent(
+      this.amqpConnection,
       Exchanges.ORDERS,
       RoutingKeys.ORDER_CREATED,
+      // From the request: only tombstones have null userId/total, and they
+      // are CANCELLED, so they never reach this point
       new OrderCreatedEvent(
-        { orderId: order.id, userId: order.userId, total: order.total },
+        { orderId: order.id, userId: payload.userId, total: payload.total },
         correlationId,
       ),
-      { correlationId },
     );
 
     return order;
@@ -151,14 +144,67 @@ export class OrderService {
     return order;
   }
 
+  /**
+   * The only source of OrderCancelled: payment results never cancel an
+   * order, a declined or failed payment fails it (see failOrder).
+   */
   async cancelByUser(orderId: string) {
-    return this.cancelOrderInternal(orderId, CancelReason.USER_REQUESTED);
+    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
+
+    let { order, changed } = await this.transition(
+      orderId,
+      OrderStatus.CANCELLED,
+    );
+
+    if (!order) {
+      ({ order, changed } = await this.createCancelledTombstone(orderId));
+    }
+
+    if (!order) {
+      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
+      return;
+    }
+
+    if (!changed && order.status !== OrderStatus.CANCELLED) {
+      this.logger.warn(
+        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
+      );
+      return;
+    }
+
+    // Published when the transition happened now, and republished when the
+    // order is already CANCELLED (redelivery after a failed publish). The
+    // payment service handles OrderCancelled idempotently.
+    const correlationId = CorrelationIdService.getId();
+    const reason = CancelReason.USER_REQUESTED;
+
+    await publishEvent(
+      this.amqpConnection,
+      Exchanges.ORDERS,
+      RoutingKeys.ORDER_CANCELLED,
+      new OrderCancelledEvent(
+        { orderId: order.id, reason, cancelledAt: order.updatedAt },
+        correlationId,
+      ),
+    );
+
+    if (changed) {
+      this.logger.log(`✅ Order ${orderId} updated to CANCELLED successfully`);
+      this.metrics.incrementOrdersCancelled(reason);
+    } else {
+      this.logger.warn(
+        `⚠️ Order ${orderId} already CANCELLED. OrderCancelled republished.`,
+      );
+    }
+
+    return order;
   }
 
-  async cancelByPaymentDeclined(orderId: string) {
-    return this.cancelOrderInternal(orderId, CancelReason.PAYMENT_DECLINED);
-  }
-
+  /**
+   * Handles both PaymentDeclined and PaymentFailed. Publishes nothing: the
+   * payment is already final (DECLINED/FAILED), so there is nothing for the
+   * payment service to compensate.
+   */
   async failOrder(orderId: string) {
     const { order, changed } = await this.transition(
       orderId,
@@ -167,7 +213,7 @@ export class OrderService {
 
     if (!order) {
       this.logger.warn(
-        `⚠️ Order ${orderId} not found. Ignoring PaymentFailed.`,
+        `⚠️ Order ${orderId} not found. Ignoring payment result.`,
       );
       return;
     }
@@ -216,56 +262,30 @@ export class OrderService {
   // PRIVATE — ORDER CANCELLATION
   // ─────────────────────────────────────────────
 
-  private async cancelOrderInternal(orderId: string, reason: CancelReason) {
-    this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
+  /**
+   * The gateway returns the orderId before the order exists, so a cancel can
+   * be handled before its create request. Instead of waiting for the order
+   * (a bounded retry that, once exhausted, let it be created and charged),
+   * the id is taken by a CANCELLED tombstone the later create will find.
+   */
+  private async createCancelledTombstone(
+    orderId: string,
+  ): Promise<{ order: Order | null; changed: boolean }> {
+    try {
+      const order = await this.prisma.order.create({
+        data: { id: orderId, status: OrderStatus.CANCELLED },
+      });
 
-    const target =
-      reason === CancelReason.PAYMENT_DECLINED
-        ? OrderStatus.FAILED
-        : OrderStatus.CANCELLED;
-
-    const { order, changed } = await this.transition(orderId, target);
-
-    if (!order) {
-      if (reason === CancelReason.USER_REQUESTED) {
-        throw new OrderNotFoundYetError(orderId);
-      }
-      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-      return;
-    }
-
-    if (!changed && order.status !== target) {
-      this.logger.warn(
-        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
+      this.logger.log(
+        `🪦 Order ${orderId} recorded as CANCELLED before being created`,
       );
-      return;
+      return { order, changed: true };
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      // The create request persisted the order between the update and insert
+      return this.transition(orderId, OrderStatus.CANCELLED);
     }
-
-    // Published when the transition happened now, and republished when the
-    // order is already in the target status (redelivery after a failed
-    // publish). The payment service handles OrderCancelled idempotently.
-    const correlationId = CorrelationIdService.getId();
-
-    await this.amqpConnection.publish(
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
-      new OrderCancelledEvent(
-        { orderId: order.id, reason, cancelledAt: order.updatedAt },
-        correlationId,
-      ),
-      { correlationId },
-    );
-
-    if (changed) {
-      this.logger.log(`✅ Order ${orderId} updated to ${target} successfully`);
-      this.metrics.incrementOrdersCancelled(reason);
-    } else {
-      this.logger.warn(
-        `⚠️ Order ${orderId} already ${target}. OrderCancelled republished.`,
-      );
-    }
-
-    return order;
   }
 
   // ─────────────────────────────────────────────
