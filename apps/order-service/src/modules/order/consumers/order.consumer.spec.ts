@@ -7,60 +7,58 @@ import {
 } from '@contracts/payment-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
-import { OrderService } from '../services/order.service';
+import { ApplyPaymentResultUseCase } from '../application/apply-payment-result.use-case';
+import { CancelOrderUseCase } from '../application/cancel-order.use-case';
+import { CreateOrderUseCase } from '../application/create-order.use-case';
 import { OrderConsumer } from './order.consumer';
 
 jest.mock('@order/prisma/prisma.service', () => ({ PrismaService: class {} }));
 
 describe('OrderConsumer.handlePaymentEvents', () => {
-  let orderService: {
-    completeOrder: jest.Mock;
-    failOrder: jest.Mock;
-    cancelByUser: jest.Mock;
-  };
+  let applyPaymentResult: { execute: jest.Mock };
+  let cancelOrder: { execute: jest.Mock };
   let consumer: OrderConsumer;
 
   const amqpMsg = { properties: {} } as unknown as ConsumeMessage;
 
   beforeEach(() => {
-    orderService = {
-      completeOrder: jest.fn(),
-      failOrder: jest.fn(),
-      cancelByUser: jest.fn(),
-    };
+    applyPaymentResult = { execute: jest.fn() };
+    cancelOrder = { execute: jest.fn() };
     consumer = new OrderConsumer(
-      orderService as unknown as OrderService,
+      { execute: jest.fn() } as unknown as CreateOrderUseCase,
+      cancelOrder as unknown as CancelOrderUseCase,
+      applyPaymentResult as unknown as ApplyPaymentResultUseCase,
       {
         startMessageProcessingTimer: jest.fn(() => jest.fn()),
       } as unknown as OrderMetricsService,
     );
   });
 
-  it('completes the order on PaymentApproved', async () => {
+  it('applies an approved result on PaymentApproved', async () => {
     await consumer.handlePaymentEvents(
       new PaymentApprovedEvent({ orderId: 'o', transactionId: 't' }),
       amqpMsg,
     );
 
-    expect(orderService.completeOrder).toHaveBeenCalledWith('o');
+    expect(applyPaymentResult.execute).toHaveBeenCalledWith('o', 'approved');
   });
 
-  it('fails the order on PaymentDeclined instead of cancelling it', async () => {
+  it('applies a declined result on PaymentDeclined instead of cancelling', async () => {
     await consumer.handlePaymentEvents(
       new PaymentDeclinedEvent({ orderId: 'o', reason: 'No funds' }),
       amqpMsg,
     );
 
-    expect(orderService.failOrder).toHaveBeenCalledWith('o');
-    expect(orderService.cancelByUser).not.toHaveBeenCalled();
+    expect(applyPaymentResult.execute).toHaveBeenCalledWith('o', 'declined');
+    expect(cancelOrder.execute).not.toHaveBeenCalled();
   });
 
-  it('fails the order on PaymentFailed', async () => {
+  it('applies a failed result on PaymentFailed', async () => {
     await consumer.handlePaymentEvents(
       new PaymentFailedEvent({ orderId: 'o', error: 'timeout' }),
       amqpMsg,
     );
 
-    expect(orderService.failOrder).toHaveBeenCalledWith('o');
+    expect(applyPaymentResult.execute).toHaveBeenCalledWith('o', 'failed');
   });
 });

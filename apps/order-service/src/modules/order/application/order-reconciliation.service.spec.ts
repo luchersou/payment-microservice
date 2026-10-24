@@ -1,9 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
-import { OrderStatus } from '@order/prisma/generated/prisma/enums';
-
 import { OrderMetricsService } from '../../metrics/metrics.service';
+import { OrderStatus } from '../domain/order-status';
 import { OrderReconciliationService } from './order-reconciliation.service';
 
 jest.mock('@order/prisma/prisma.service', () => ({ PrismaService: class {} }));

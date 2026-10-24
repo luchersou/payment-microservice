@@ -2,12 +2,12 @@ import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
-import { OrderStatus } from '@order/prisma/generated/prisma/enums';
 import { PrismaService } from '@order/prisma/prisma.service';
 
 import { CorrelationLogger } from '@common/logger';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
+import { OrderStatus } from '../domain/order-status';
 
 const LOGGED_IDS = 20;
 

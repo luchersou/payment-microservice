@@ -1,4 +1,4 @@
-import { OrderStatus } from '@order/prisma/generated/prisma/enums';
+import { OrderStatus } from './order-status';
 
 /**
  * Allowed order status transitions.
@@ -29,4 +29,8 @@ export function sourceStatusesFor(target: OrderStatus): OrderStatus[] {
   return (Object.keys(ORDER_TRANSITIONS) as OrderStatus[]).filter((from) =>
     ORDER_TRANSITIONS[from].includes(target),
   );
+}
+
+export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
+  return ORDER_TRANSITIONS[from].includes(to);
 }

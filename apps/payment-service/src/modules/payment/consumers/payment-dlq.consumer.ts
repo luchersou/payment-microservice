@@ -19,14 +19,14 @@ import {
 } from '@contracts/order-events';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
-import { PaymentService } from '../services/payment.service';
+import { PrismaFailedMessageRepository } from '../infra/prisma-failed-message.repository';
 
 @Injectable()
 export class PaymentDlqConsumer {
   private readonly logger = new CorrelationLogger(PaymentDlqConsumer.name);
 
   constructor(
-    private readonly paymentService: PaymentService,
+    private readonly failedMessages: PrismaFailedMessageRepository,
     private readonly metrics: PaymentMetricsService,
   ) {}
 
@@ -58,7 +58,7 @@ export class PaymentDlqConsumer {
           amqpMsg.fields.routingKey,
         );
 
-        await this.paymentService.saveFailedMessage({
+        await this.failedMessages.save({
           queue: DLQ.PAYMENT_ORDER_CREATED,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,
@@ -105,7 +105,7 @@ export class PaymentDlqConsumer {
           amqpMsg.fields.routingKey,
         );
 
-        await this.paymentService.saveFailedMessage({
+        await this.failedMessages.save({
           queue: DLQ.PAYMENT_ORDER_CANCELLED,
           routingKey: amqpMsg.fields.routingKey,
           payload: event,

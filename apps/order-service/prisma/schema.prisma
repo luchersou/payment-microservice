@@ -13,13 +13,14 @@ datasource db {
 
 model Order {
   id        String      @id @default(uuid())
-  /// userId and total are null for a tombstone: the order was cancelled
-  /// before its create request was processed
-  userId    String?
-  total     Float?
-  status    OrderStatus @default(PENDING_PAYMENT)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  /// userId and totalCents are null for a tombstone: the order was
+  /// cancelled before its create request was processed
+  userId     String?
+  /// Integer cents (1999 = 19.99): floats cannot hold most decimal amounts
+  totalCents Int?
+  status     OrderStatus @default(PENDING_PAYMENT)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 }
 
 model FailedMessage {

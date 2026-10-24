@@ -1,13 +1,13 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 
+import { PaymentQueriesService } from '../application/payment-queries.service';
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
 import { PaymentResponseDto } from '../dto/payment-response.dto';
 import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
-import { PaymentService } from '../services/payment.service';
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(private readonly queries: PaymentQueriesService) {}
 
   @Get()
   async findAll(
@@ -17,25 +17,25 @@ export class PaymentsController {
     const pageNumber = Math.max(1, parseInt(page, 10) || 1);
     const limitNumber = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
 
-    return this.paymentService.findAll(pageNumber, limitNumber);
+    return this.queries.findAll(pageNumber, limitNumber);
   }
 
   @Get('stats')
   async getStats(): Promise<PaymentStatsResponseDto> {
-    return this.paymentService.getStats();
+    return this.queries.getStats();
   }
 
   @Get(':id')
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<PaymentResponseDto> {
-    return this.paymentService.findOne(id);
+    return this.queries.findOne(id);
   }
 
   @Get('order/:orderId')
   async findByOrder(
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ): Promise<PaymentResponseDto> {
-    return this.paymentService.findByOrderId(orderId);
+    return this.queries.findByOrderId(orderId);
   }
 }

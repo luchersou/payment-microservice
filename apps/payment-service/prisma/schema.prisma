@@ -14,8 +14,9 @@ datasource db {
 model Payment {
   id            String        @id @default(uuid())
   orderId       String        @unique
-  /// Null for a tombstone: the order was cancelled before OrderCreated arrived
-  amount        Float?
+  /// Integer cents (1999 = 19.99). Null for a tombstone: the order was
+  /// cancelled before OrderCreated arrived
+  amountCents   Int?
   status        PaymentStatus @default(PROCESSING)
   /// Why the payment was DECLINED or FAILED, so a republished result keeps it
   failureReason String?

@@ -43,7 +43,7 @@ export class OrdersService {
       {
         orderId,
         userId: createOrderDto.userId,
-        total: createOrderDto.total,
+        totalCents: createOrderDto.totalCents,
       },
       correlationId,
     );

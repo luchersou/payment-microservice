@@ -1,16 +1,18 @@
-import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import { Inject, Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
-import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
-import { PrismaService } from '@payment/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
 import { correlationIdStorage } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
-import { PaymentService } from './payment.service';
+import {
+  PAYMENT_REPOSITORY,
+  PaymentRepository,
+} from '../domain/ports/payment.repository';
+import { ProcessPaymentUseCase } from './process-payment.use-case';
 
 const BATCH_SIZE = 50;
 
@@ -29,8 +31,8 @@ export class PaymentReconciliationService implements OnApplicationBootstrap {
   private running = false;
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly paymentService: PaymentService,
+    @Inject(PAYMENT_REPOSITORY) private readonly payments: PaymentRepository,
+    private readonly processPayment: ProcessPaymentUseCase,
     private readonly metrics: PaymentMetricsService,
     private readonly scheduler: SchedulerRegistry,
     config: ConfigService,
@@ -53,14 +55,10 @@ export class PaymentReconciliationService implements OnApplicationBootstrap {
     this.running = true;
 
     try {
-      const stuck = await this.prisma.payment.findMany({
-        where: {
-          status: PaymentStatus.PROCESSING,
-          updatedAt: { lt: new Date(Date.now() - this.stuckAfterMs) },
-        },
-        orderBy: { updatedAt: 'asc' },
-        take: BATCH_SIZE,
-      });
+      const stuck = await this.payments.findStuckProcessing(
+        new Date(Date.now() - this.stuckAfterMs),
+        BATCH_SIZE,
+      );
 
       let resumed = 0;
 
@@ -70,7 +68,7 @@ export class PaymentReconciliationService implements OnApplicationBootstrap {
           { correlationId: `reconcile-${randomUUID()}` },
           async () => {
             try {
-              await this.paymentService.resumePayment(payment);
+              await this.processPayment.resume(payment);
               this.metrics.incrementPaymentsReconciled();
               resumed++;
             } catch (error) {

@@ -1,11 +1,11 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 
+import { OrderQueriesService } from '../application/order-queries.service';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
-import { OrderService } from '../services/order.service';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(private readonly queries: OrderQueriesService) {}
 
   @Get()
   async findAll(
@@ -15,12 +15,12 @@ export class OrdersController {
     const pageNumber = Math.max(1, parseInt(page, 10) || 1);
     const limitNumber = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
 
-    return this.orderService.findAll(pageNumber, limitNumber);
+    return this.queries.findAll(pageNumber, limitNumber);
   }
 
   @Get(':id')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    const order = await this.orderService.findOne(id);
+    const order = await this.queries.findOne(id);
     return order;
   }
 }
