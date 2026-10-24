@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import type { Order as OrderRecord } from '@order/prisma/generated/prisma/client';
+import {
+  type Order as OrderRecord,
+  Prisma,
+} from '@order/prisma/generated/prisma/client';
 import { PrismaService } from '@order/prisma/prisma.service';
 
 import { Order } from '../domain/order';
@@ -80,10 +83,10 @@ function toDomain(record: OrderRecord): Order {
   });
 }
 
+/** Prisma's unique constraint violation: the record already exists */
 function isUniqueConstraintError(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 'P2002'
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
   );
 }

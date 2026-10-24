@@ -1,3 +1,5 @@
+import { Prisma } from '@order/prisma/generated/prisma/client';
+
 import { OutboxRecord } from '@messaging/outbox';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import { CancelReason } from '@contracts/order-events';
@@ -20,7 +22,10 @@ function makeFakePrisma() {
     create: jest.fn(({ data }: { data: OrderProps }) => {
       if (rows.has(data.id)) {
         return Promise.reject(
-          Object.assign(new Error('Unique'), { code: 'P2002' }),
+          new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+            code: 'P2002',
+            clientVersion: 'test',
+          }),
         );
       }
       rows.set(data.id, { ...data });
@@ -77,6 +82,19 @@ describe('PrismaOrderRepository', () => {
   beforeEach(() => {
     fake = makeFakePrisma();
     repository = new PrismaOrderRepository(fake.prisma as never);
+  });
+
+  it('does not mistake any error with a P2002 code for a duplicate', async () => {
+    const lookalike = Object.assign(new Error('not from Prisma'), {
+      code: 'P2002',
+    });
+    jest
+      .spyOn(fake.prisma, '$transaction')
+      .mockRejectedValueOnce(lookalike as never);
+
+    await expect(repository.create(Order.create('o', 'u', 100))).rejects.toBe(
+      lookalike,
+    );
   });
 
   it('creates the order together with OrderCreated in the outbox', async () => {
