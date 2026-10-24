@@ -1,12 +1,18 @@
-import { ChargeResult } from '../../domain/ports/payment-gateway';
+import {
+  ChargeResult,
+  ReleaseResult,
+} from '../../domain/ports/payment-gateway';
 
 /** Deterministic gateway: approves unless a test says otherwise */
 export function makeGateway() {
   return {
-    charge: jest
+    authorize: jest
       .fn<Promise<ChargeResult>, [string, number]>()
       .mockResolvedValue({ status: 'approved' }),
-    refund: jest.fn<Promise<boolean>, [string]>().mockResolvedValue(true),
+    capture: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
+    release: jest
+      .fn<Promise<ReleaseResult>, [string]>()
+      .mockResolvedValue('voided'),
   };
 }
 
@@ -19,5 +25,6 @@ export function makeMetrics() {
     incrementPaymentsRefunded: jest.fn(),
     incrementPaymentsCancelled: jest.fn(),
     incrementPaymentsReconciled: jest.fn(),
+    incrementAuthorizationsVoided: jest.fn(),
   };
 }

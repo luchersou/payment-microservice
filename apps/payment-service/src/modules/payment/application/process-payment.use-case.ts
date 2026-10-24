@@ -35,7 +35,8 @@ export class ProcessPaymentUseCase {
    * - new payment → charge it
    * - existing PROCESSING payment (previous attempt crashed mid-way) → resume
    * - CANCELLED payment (the order was cancelled first) → never charge
-   * - already decided payment (redelivery) → do nothing: its result was
+   * - APPROVED payment (redelivery) → make sure it is captured, nothing else
+   * - otherwise decided payment (redelivery) → do nothing: its result was
    *   written to the outbox in the same transaction as the decision
    */
   async execute(payload: OrderCreatedPayload) {
@@ -56,12 +57,21 @@ export class ProcessPaymentUseCase {
       this.logger.warn(
         `⚠️ Order ${payload.orderId} was cancelled before payment, not charging`,
       );
-      // It may have been charged before the cancel won, with the refund
-      // failing afterwards. This redelivery finishes it; refund is a no-op
-      // when nothing was charged.
+      // An authorization may have been taken before the cancel won, with
+      // the release failing afterwards. This redelivery finishes it; release
+      // is a no-op when nothing is held.
       if (payment.mayHaveBeenCharged) {
-        await this.refundLostApproval(payment);
+        await this.releaseLostAuthorization(payment);
       }
+      return;
+    }
+
+    if (payment.status === PaymentStatus.APPROVED) {
+      // Finishes a capture that failed after the approval was saved
+      await this.gateway.capture(payment.id);
+      this.logger.warn(
+        `⚠️ Payment for order ${payload.orderId} already APPROVED, capture ensured`,
+      );
       return;
     }
 
@@ -104,9 +114,9 @@ export class ProcessPaymentUseCase {
     // Only gateway errors mark the payment as FAILED. A database error while
     // recording the decision propagates: nothing was committed (status and
     // outbox event are one transaction), so the retry resumes the payment
-    // and charges again with the same paymentId, which the gateway dedupes.
+    // and authorizes again with the same paymentId, which the gateway dedupes.
     try {
-      result = await this.gateway.charge(payment.id, payment.amountCents);
+      result = await this.gateway.authorize(payment.id, payment.amountCents);
     } catch (error) {
       this.logger.error(
         `❌ Unexpected gateway error for order ${payment.orderId}`,
@@ -132,19 +142,23 @@ export class ProcessPaymentUseCase {
       payment.approve();
 
       if (!(await this.payments.save(payment))) {
-        // The order was cancelled while the charge was in flight: the
-        // customer was charged for a payment that is already CANCELLED.
-        // A refund failure propagates, and the retry refunds again from
-        // execute().
+        // The order was cancelled while the authorization was in flight.
+        // Nothing was captured yet, so voiding it means the customer is
+        // never charged. A release failure propagates, and the retry
+        // releases again from execute().
         this.logger.warn(
-          `⚠️ Payment ${payment.id} changed while charging (order cancelled?), refunding the charge`,
+          `⚠️ Payment ${payment.id} changed while authorizing (order cancelled?), releasing the authorization`,
         );
-        await this.refundLostApproval(payment);
+        await this.releaseLostAuthorization(payment);
         return;
       }
 
       this.metrics.incrementPaymentsApproved();
       this.logger.log(`✅ Payment approved for order ${payment.orderId}`);
+
+      // Only now that the approval is recorded is the money taken. A capture
+      // failure propagates; the redelivery finds APPROVED and captures again.
+      await this.gateway.capture(payment.id);
     } finally {
       endTimer();
     }
@@ -196,18 +210,27 @@ export class ProcessPaymentUseCase {
     }
   }
 
-  private async refundLostApproval(payment: Payment) {
-    if (!(await this.gateway.refund(payment.id))) return;
+  private async releaseLostAuthorization(payment: Payment) {
+    const released = await this.gateway.release(payment.id);
 
+    if (released === 'voided') {
+      this.metrics.incrementAuthorizationsVoided();
+      this.logger.log(
+        `🔓 Authorization of cancelled payment ${payment.id} voided, order ${payment.orderId} not charged`,
+      );
+      return;
+    }
+
+    if (released !== 'refunded') return;
+
+    // Only if a capture slipped through (it should not: capture happens
+    // after the approval wins). Money moved back, so announce it, from a
+    // fresh read since `payment` may still hold the lost approval.
     this.metrics.incrementPaymentsRefunded();
     this.logger.log(
       `💰 Charge of cancelled payment ${payment.id} refunded for order ${payment.orderId}`,
     );
 
-    // Announce it from a fresh read: `payment` may still hold the lost
-    // approval. The refund itself cannot share a transaction with the
-    // event; if this save fails the retry finds nothing left to refund and
-    // the (informational) PaymentRefunded is not published.
     const cancelled = await this.payments.findByOrderId(payment.orderId);
 
     if (cancelled?.status === PaymentStatus.CANCELLED) {

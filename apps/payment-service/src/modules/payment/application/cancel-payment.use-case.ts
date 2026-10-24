@@ -71,9 +71,10 @@ export class CancelPaymentUseCase {
   private async cancel(payment: Payment) {
     switch (payment.status) {
       case PaymentStatus.APPROVED:
-        // Refund first: if saving REFUNDED fails, the retry refunds again
+        // Give the money back first (refund, or void if the capture never
+        // happened): if saving REFUNDED fails, the retry releases again
         // (idempotent on paymentId) instead of leaving the customer charged
-        await this.gateway.refund(payment.id);
+        await this.gateway.release(payment.id);
         payment.refund();
         await this.saveOrThrow(payment);
         this.metrics.incrementPaymentsRefunded();

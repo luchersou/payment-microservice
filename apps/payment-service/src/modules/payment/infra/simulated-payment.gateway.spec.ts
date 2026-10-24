@@ -8,13 +8,13 @@ describe('SimulatedPaymentGateway', () => {
     new SimulatedPaymentGateway({ latencyMs: 0, random: () => random });
 
   it('approves when the draw is above the decline rate', async () => {
-    await expect(gatewayWith(0.5).charge('pay-1', 1000)).resolves.toEqual({
+    await expect(gatewayWith(0.5).authorize('pay-1', 1000)).resolves.toEqual({
       status: 'approved',
     });
   });
 
   it('declines for insufficient funds below the decline rate', async () => {
-    await expect(gatewayWith(0.1).charge('pay-1', 1000)).resolves.toEqual({
+    await expect(gatewayWith(0.1).authorize('pay-1', 1000)).resolves.toEqual({
       status: 'declined',
       reason: SIMULATED_DECLINE_REASON,
     });
@@ -27,26 +27,36 @@ describe('SimulatedPaymentGateway', () => {
       random: () => draws.shift()!,
     });
 
-    const first = await gateway.charge('pay-1', 1000);
-    const second = await gateway.charge('pay-1', 1000);
+    const first = await gateway.authorize('pay-1', 1000);
+    const second = await gateway.authorize('pay-1', 1000);
 
     expect(second).toEqual(first);
     expect(draws).toEqual([0.1]);
   });
 
-  it('refunds an approved charge only once', async () => {
+  it('voids an authorization that was never captured', async () => {
     const gateway = gatewayWith(0.5);
-    await gateway.charge('pay-1', 1000);
+    await gateway.authorize('pay-1', 1000);
 
-    await expect(gateway.refund('pay-1')).resolves.toBe(true);
-    await expect(gateway.refund('pay-1')).resolves.toBe(false);
+    await expect(gateway.release('pay-1')).resolves.toBe('voided');
+    await expect(gateway.release('pay-1')).resolves.toBe('nothing');
   });
 
-  it('has nothing to refund for a payment never charged or declined', async () => {
-    const gateway = gatewayWith(0.1);
-    await gateway.charge('declined', 1000);
+  it('refunds a captured charge, once', async () => {
+    const gateway = gatewayWith(0.5);
+    await gateway.authorize('pay-1', 1000);
+    await gateway.capture('pay-1');
+    await gateway.capture('pay-1');
 
-    await expect(gateway.refund('never-charged')).resolves.toBe(false);
-    await expect(gateway.refund('declined')).resolves.toBe(false);
+    await expect(gateway.release('pay-1')).resolves.toBe('refunded');
+    await expect(gateway.release('pay-1')).resolves.toBe('nothing');
+  });
+
+  it('has nothing to release for a payment never authorized or declined', async () => {
+    const gateway = gatewayWith(0.1);
+    await gateway.authorize('declined', 1000);
+
+    await expect(gateway.release('never-seen')).resolves.toBe('nothing');
+    await expect(gateway.release('declined')).resolves.toBe('nothing');
   });
 });

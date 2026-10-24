@@ -185,9 +185,9 @@ payment-microservice/
   `DECLINED`, `FAILED`, `REFUNDED` and `CANCELLED` are terminal
 * Consumes `order.created` to charge the payment and `order.cancelled` to cancel or refund it
 * A cancel that arrives before `order.created` writes a `CANCELLED` **tombstone** payment (no amount), so the `order.created` that arrives later never charges
-* If the cancel wins the race while a charge is in flight, the charge is refunded through the gateway
+* Charges in two steps, like real card processors: `authorize` reserves the amount and `capture` takes it only after the approval is recorded. If the cancel wins the race while an authorization is in flight, the authorization is voided, so the customer is never charged
 * Emits `payment.approved`, `payment.declined`, `payment.failed` and `payment.refunded` through the outbox
-* The provider sits behind a `PaymentGateway` port (`charge(paymentId, amountCents)`, `refund(paymentId)`, with `paymentId` as the idempotency key). The bundled `SimulatedPaymentGateway` has ~1.5s latency and declines ~20% for insufficient funds
+* The provider sits behind a `PaymentGateway` port (`authorize(paymentId, amountCents)`, `capture(paymentId)`, `release(paymentId)` to void or refund, with `paymentId` as the idempotency key). The bundled `SimulatedPaymentGateway` has ~1.5s latency and declines ~20% for insufficient funds
 * Amounts are integers in cents (`amountCents`)
 * Provides payment statistics and queries
 * Isolated PostgreSQL database
@@ -397,10 +397,10 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 4. Payment Service → Consume order.created
    - Create payment (status: PROCESSING)
    - If a tombstone already holds the orderId (cancelled first) → never charge
-   - Charge through the PaymentGateway (paymentId as idempotency key)
+   - Authorize through the PaymentGateway (paymentId as idempotency key)
 
 5. Payment Service → Save the result + its event in the outbox, then emit:
-   - payment.approved
+   - payment.approved (and only then capture the authorized amount)
    - OR payment.declined (reason kept in failureReason)
    - OR payment.failed
 
@@ -425,8 +425,9 @@ All requests go through the **API Gateway** on `http://localhost:3000/api`
 
 4. Payment Service → Consume order.cancelled
    - If PROCESSING   → Mark as CANCELLED
-                       (a charge still in flight is refunded when it returns)
-   - If APPROVED     → Refund through the gateway → Mark as REFUNDED
+                       (an authorization still in flight is voided when it
+                        returns: the customer is never charged)
+   - If APPROVED     → Release through the gateway (refund) → Mark as REFUNDED
                      → Emit payment.refunded
    - If it does not exist yet → Create it as CANCELLED (tombstone, no amount)
    - Otherwise       → Ignore

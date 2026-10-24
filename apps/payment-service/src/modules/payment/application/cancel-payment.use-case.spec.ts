@@ -37,10 +37,11 @@ describe('CancelPaymentUseCase', () => {
 
   it('refunds an APPROVED payment through the gateway', async () => {
     const approved = payments.seed('order-1', PaymentStatus.APPROVED);
+    gateway.release.mockResolvedValue('refunded');
 
     await useCase.execute(cancelled);
 
-    expect(gateway.refund).toHaveBeenCalledWith(approved.id);
+    expect(gateway.release).toHaveBeenCalledWith(approved.id);
     expect(status()).toBe(PaymentStatus.REFUNDED);
     expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
     expect(payments.events).toEqual([
@@ -50,7 +51,7 @@ describe('CancelPaymentUseCase', () => {
 
   it('keeps the payment APPROVED when the refund fails, so the retry refunds it', async () => {
     payments.seed('order-1', PaymentStatus.APPROVED);
-    gateway.refund.mockRejectedValueOnce(new Error('provider down'));
+    gateway.release.mockRejectedValueOnce(new Error('provider down'));
 
     await expect(useCase.execute(cancelled)).rejects.toThrow('provider down');
 
@@ -79,7 +80,7 @@ describe('CancelPaymentUseCase', () => {
     await useCase.execute(cancelled);
 
     expect(status()).toBe(final);
-    expect(gateway.refund).not.toHaveBeenCalled();
+    expect(gateway.release).not.toHaveBeenCalled();
   });
 
   it('writes a CANCELLED tombstone when the payment does not exist yet', async () => {
@@ -107,7 +108,7 @@ describe('CancelPaymentUseCase', () => {
       totalCents: 100,
     });
 
-    expect(gateway.charge).not.toHaveBeenCalled();
+    expect(gateway.authorize).not.toHaveBeenCalled();
     expect(payments.size).toBe(1);
     expect(status()).toBe(PaymentStatus.CANCELLED);
   });
