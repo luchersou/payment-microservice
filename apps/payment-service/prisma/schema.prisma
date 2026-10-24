@@ -30,6 +30,8 @@ model FailedMessage {
   payload    Json
   error      String?
   createdAt  DateTime @default(now())
+  /// Set when the message was republished to its original queue (DLQ replay)
+  replayedAt DateTime?
 
   @@map("failed_messages")
 }

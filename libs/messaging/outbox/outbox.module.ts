@@ -13,7 +13,8 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 
 import { CorrelationLogger } from '@common/logger';
 
-import { OutboxDatabase, OutboxRelay } from './outbox-relay';
+import { RawSqlDatabase } from '../database';
+import { OutboxRelay } from './outbox-relay';
 
 const OUTBOX_DATABASE = Symbol('OUTBOX_DATABASE');
 
@@ -28,7 +29,7 @@ export class OutboxRelayRunner
   private timer?: NodeJS.Timeout;
 
   constructor(
-    @Inject(OUTBOX_DATABASE) db: OutboxDatabase,
+    @Inject(OUTBOX_DATABASE) db: RawSqlDatabase,
     amqp: AmqpConnection,
     config: ConfigService,
   ) {
@@ -62,8 +63,8 @@ export class OutboxRelayRunner
 
 @Module({})
 export class OutboxModule {
-  /** `database`: the service's PrismaService (type-checked as OutboxDatabase) */
-  static forRoot(database: Type<OutboxDatabase>): DynamicModule {
+  /** `database`: the service's PrismaService (type-checked as RawSqlDatabase) */
+  static forRoot(database: Type<RawSqlDatabase>): DynamicModule {
     return {
       module: OutboxModule,
       providers: [

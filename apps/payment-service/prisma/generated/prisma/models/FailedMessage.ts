@@ -29,6 +29,7 @@ export type FailedMessageMinAggregateOutputType = {
   routingKey: string | null
   error: string | null
   createdAt: Date | null
+  replayedAt: Date | null
 }
 
 export type FailedMessageMaxAggregateOutputType = {
@@ -37,6 +38,7 @@ export type FailedMessageMaxAggregateOutputType = {
   routingKey: string | null
   error: string | null
   createdAt: Date | null
+  replayedAt: Date | null
 }
 
 export type FailedMessageCountAggregateOutputType = {
@@ -46,6 +48,7 @@ export type FailedMessageCountAggregateOutputType = {
   payload: number
   error: number
   createdAt: number
+  replayedAt: number
   _all: number
 }
 
@@ -56,6 +59,7 @@ export type FailedMessageMinAggregateInputType = {
   routingKey?: true
   error?: true
   createdAt?: true
+  replayedAt?: true
 }
 
 export type FailedMessageMaxAggregateInputType = {
@@ -64,6 +68,7 @@ export type FailedMessageMaxAggregateInputType = {
   routingKey?: true
   error?: true
   createdAt?: true
+  replayedAt?: true
 }
 
 export type FailedMessageCountAggregateInputType = {
@@ -73,6 +78,7 @@ export type FailedMessageCountAggregateInputType = {
   payload?: true
   error?: true
   createdAt?: true
+  replayedAt?: true
   _all?: true
 }
 
@@ -155,6 +161,7 @@ export type FailedMessageGroupByOutputType = {
   payload: runtime.JsonValue
   error: string | null
   createdAt: Date
+  replayedAt: Date | null
   _count: FailedMessageCountAggregateOutputType | null
   _min: FailedMessageMinAggregateOutputType | null
   _max: FailedMessageMaxAggregateOutputType | null
@@ -185,6 +192,7 @@ export type FailedMessageWhereInput = {
   payload?: Prisma.JsonFilter<"FailedMessage">
   error?: Prisma.StringNullableFilter<"FailedMessage"> | string | null
   createdAt?: Prisma.DateTimeFilter<"FailedMessage"> | Date | string
+  replayedAt?: Prisma.DateTimeNullableFilter<"FailedMessage"> | Date | string | null
 }
 
 export type FailedMessageOrderByWithRelationInput = {
@@ -194,6 +202,7 @@ export type FailedMessageOrderByWithRelationInput = {
   payload?: Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  replayedAt?: Prisma.SortOrderInput | Prisma.SortOrder
 }
 
 export type FailedMessageWhereUniqueInput = Prisma.AtLeast<{
@@ -206,6 +215,7 @@ export type FailedMessageWhereUniqueInput = Prisma.AtLeast<{
   payload?: Prisma.JsonFilter<"FailedMessage">
   error?: Prisma.StringNullableFilter<"FailedMessage"> | string | null
   createdAt?: Prisma.DateTimeFilter<"FailedMessage"> | Date | string
+  replayedAt?: Prisma.DateTimeNullableFilter<"FailedMessage"> | Date | string | null
 }, "id">
 
 export type FailedMessageOrderByWithAggregationInput = {
@@ -215,6 +225,7 @@ export type FailedMessageOrderByWithAggregationInput = {
   payload?: Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  replayedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.FailedMessageCountOrderByAggregateInput
   _max?: Prisma.FailedMessageMaxOrderByAggregateInput
   _min?: Prisma.FailedMessageMinOrderByAggregateInput
@@ -230,6 +241,7 @@ export type FailedMessageScalarWhereWithAggregatesInput = {
   payload?: Prisma.JsonWithAggregatesFilter<"FailedMessage">
   error?: Prisma.StringNullableWithAggregatesFilter<"FailedMessage"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"FailedMessage"> | Date | string
+  replayedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"FailedMessage"> | Date | string | null
 }
 
 export type FailedMessageCreateInput = {
@@ -239,6 +251,7 @@ export type FailedMessageCreateInput = {
   payload: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: string | null
   createdAt?: Date | string
+  replayedAt?: Date | string | null
 }
 
 export type FailedMessageUncheckedCreateInput = {
@@ -248,6 +261,7 @@ export type FailedMessageUncheckedCreateInput = {
   payload: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: string | null
   createdAt?: Date | string
+  replayedAt?: Date | string | null
 }
 
 export type FailedMessageUpdateInput = {
@@ -257,6 +271,7 @@ export type FailedMessageUpdateInput = {
   payload?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  replayedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type FailedMessageUncheckedUpdateInput = {
@@ -266,6 +281,7 @@ export type FailedMessageUncheckedUpdateInput = {
   payload?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  replayedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type FailedMessageCreateManyInput = {
@@ -275,6 +291,7 @@ export type FailedMessageCreateManyInput = {
   payload: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: string | null
   createdAt?: Date | string
+  replayedAt?: Date | string | null
 }
 
 export type FailedMessageUpdateManyMutationInput = {
@@ -284,6 +301,7 @@ export type FailedMessageUpdateManyMutationInput = {
   payload?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  replayedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type FailedMessageUncheckedUpdateManyInput = {
@@ -293,6 +311,7 @@ export type FailedMessageUncheckedUpdateManyInput = {
   payload?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  replayedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type FailedMessageCountOrderByAggregateInput = {
@@ -302,6 +321,7 @@ export type FailedMessageCountOrderByAggregateInput = {
   payload?: Prisma.SortOrder
   error?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  replayedAt?: Prisma.SortOrder
 }
 
 export type FailedMessageMaxOrderByAggregateInput = {
@@ -310,6 +330,7 @@ export type FailedMessageMaxOrderByAggregateInput = {
   routingKey?: Prisma.SortOrder
   error?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  replayedAt?: Prisma.SortOrder
 }
 
 export type FailedMessageMinOrderByAggregateInput = {
@@ -318,6 +339,11 @@ export type FailedMessageMinOrderByAggregateInput = {
   routingKey?: Prisma.SortOrder
   error?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  replayedAt?: Prisma.SortOrder
+}
+
+export type NullableDateTimeFieldUpdateOperationsInput = {
+  set?: Date | string | null
 }
 
 
@@ -329,6 +355,7 @@ export type FailedMessageSelect<ExtArgs extends runtime.Types.Extensions.Interna
   payload?: boolean
   error?: boolean
   createdAt?: boolean
+  replayedAt?: boolean
 }, ExtArgs["result"]["failedMessage"]>
 
 export type FailedMessageSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -338,6 +365,7 @@ export type FailedMessageSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   payload?: boolean
   error?: boolean
   createdAt?: boolean
+  replayedAt?: boolean
 }, ExtArgs["result"]["failedMessage"]>
 
 export type FailedMessageSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -347,6 +375,7 @@ export type FailedMessageSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   payload?: boolean
   error?: boolean
   createdAt?: boolean
+  replayedAt?: boolean
 }, ExtArgs["result"]["failedMessage"]>
 
 export type FailedMessageSelectScalar = {
@@ -356,9 +385,10 @@ export type FailedMessageSelectScalar = {
   payload?: boolean
   error?: boolean
   createdAt?: boolean
+  replayedAt?: boolean
 }
 
-export type FailedMessageOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "queue" | "routingKey" | "payload" | "error" | "createdAt", ExtArgs["result"]["failedMessage"]>
+export type FailedMessageOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "queue" | "routingKey" | "payload" | "error" | "createdAt" | "replayedAt", ExtArgs["result"]["failedMessage"]>
 
 export type $FailedMessagePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "FailedMessage"
@@ -370,6 +400,10 @@ export type $FailedMessagePayload<ExtArgs extends runtime.Types.Extensions.Inter
     payload: runtime.JsonValue
     error: string | null
     createdAt: Date
+    /**
+     * Set when the message was republished to its original queue (DLQ replay)
+     */
+    replayedAt: Date | null
   }, ExtArgs["result"]["failedMessage"]>
   composites: {}
 }
@@ -799,6 +833,7 @@ export interface FailedMessageFieldRefs {
   readonly payload: Prisma.FieldRef<"FailedMessage", 'Json'>
   readonly error: Prisma.FieldRef<"FailedMessage", 'String'>
   readonly createdAt: Prisma.FieldRef<"FailedMessage", 'DateTime'>
+  readonly replayedAt: Prisma.FieldRef<"FailedMessage", 'DateTime'>
 }
     
 

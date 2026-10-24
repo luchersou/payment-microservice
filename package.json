@@ -21,6 +21,8 @@
     "start:prod:api-gateway": "node dist/apps/api-gateway/main.js",
     "start:prod:order": "node dist/apps/order-service/main.js",
     "start:prod:payment": "node dist/apps/payment-service/main.js",
+    "dlq:replay:order": "node dist/apps/order-service/src/replay-dlq.js",
+    "dlq:replay:payment": "node dist/apps/payment-service/src/replay-dlq.js",
     "prisma:generate": "prisma generate --schema=./libs/database/prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=./libs/database/prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=./libs/database/prisma/schema.prisma",

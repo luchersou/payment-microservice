@@ -685,7 +685,8 @@ export const FailedMessageScalarFieldEnum = {
   routingKey: 'routingKey',
   payload: 'payload',
   error: 'error',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  replayedAt: 'replayedAt'
 } as const
 
 export type FailedMessageScalarFieldEnum = (typeof FailedMessageScalarFieldEnum)[keyof typeof FailedMessageScalarFieldEnum]

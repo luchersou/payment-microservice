@@ -1,6 +1,7 @@
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 
-import { OutboxDatabase, OutboxRelay, OutboxTransaction } from './outbox-relay';
+import { RawSqlDatabase, RawSqlTransaction } from '../database';
+import { OutboxRelay } from './outbox-relay';
 
 type Row = {
   id: string;
@@ -33,8 +34,8 @@ function makeDb(rows: Row[]) {
     }),
   };
 
-  const db: OutboxDatabase = {
-    $transaction: jest.fn((fn) => fn(tx as unknown as OutboxTransaction)),
+  const db: RawSqlDatabase = {
+    $transaction: jest.fn((fn) => fn(tx as unknown as RawSqlTransaction)),
   };
 
   const publishedIds = () =>
@@ -52,7 +53,7 @@ describe('OutboxRelay', () => {
     amqp = { publish: jest.fn().mockResolvedValue(true) };
   });
 
-  const relayFor = (db: OutboxDatabase) =>
+  const relayFor = (db: RawSqlDatabase) =>
     new OutboxRelay(db, amqp as unknown as AmqpConnection, {
       batchSize: 50,
       publishTimeoutMs: 1000,

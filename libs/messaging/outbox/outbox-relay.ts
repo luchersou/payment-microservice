@@ -3,29 +3,8 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { correlationIdStorage } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
 
+import { RawSqlDatabase, RawSqlTransaction } from '../database';
 import { publishEvent } from '../rabbitmq/publishing';
-
-/**
- * The part of a Prisma client the relay needs. Both services' generated
- * clients satisfy it, so the relay does not depend on either of them.
- */
-export interface OutboxTransaction {
-  $queryRaw<T = unknown>(
-    query: TemplateStringsArray,
-    ...values: unknown[]
-  ): PromiseLike<T>;
-  $executeRaw(
-    query: TemplateStringsArray,
-    ...values: unknown[]
-  ): PromiseLike<number>;
-}
-
-export interface OutboxDatabase {
-  $transaction<R>(
-    fn: (tx: OutboxTransaction) => Promise<R>,
-    options?: { timeout?: number },
-  ): PromiseLike<R>;
-}
 
 export interface OutboxRelayOptions {
   batchSize: number;
@@ -56,7 +35,7 @@ export class OutboxRelay {
   private running = false;
 
   constructor(
-    private readonly db: OutboxDatabase,
+    private readonly db: RawSqlDatabase,
     private readonly amqp: AmqpConnection,
     private readonly options: OutboxRelayOptions,
   ) {}
@@ -77,7 +56,7 @@ export class OutboxRelay {
     }
   }
 
-  private async relayBatch(tx: OutboxTransaction): Promise<number> {
+  private async relayBatch(tx: RawSqlTransaction): Promise<number> {
     const pending = await tx.$queryRaw<PendingMessage[]>`
       SELECT id, exchange, "routingKey", payload, "correlationId"
       FROM outbox_messages
