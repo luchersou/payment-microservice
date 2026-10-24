@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import type { Payment } from '@payment/prisma/generated/prisma/client';
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
@@ -21,11 +21,15 @@ import {
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
 import { canTransition } from '../domain/payment-state-machine';
+import {
+  ChargeResult,
+  PAYMENT_GATEWAY,
+  PaymentGateway,
+} from '../domain/ports/payment-gateway';
 import { PaginatedPaymentsResponseDto } from '../dto/paginated-payments-response.dto';
 import { PaymentResponseDto } from '../dto/payment-response.dto';
 import { PaymentStatsResponseDto } from '../dto/payment-stats-response.dto';
 
-const DEFAULT_DECLINE_REASON = 'Insufficient funds';
 const UNKNOWN_FAILURE_REASON = 'Unknown error';
 
 /** The payment changed between read and conditional write; retry re-reads it */
@@ -43,6 +47,7 @@ export class PaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: PaymentMetricsService,
+    @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
   ) {}
 
   // ─────────────────────────────────────────────
@@ -277,13 +282,19 @@ export class PaymentService {
   }
 
   private async processPayment(payment: Payment) {
-    let result: { approved: boolean; reason?: string };
+    if (payment.amount === null) {
+      // Only tombstones lack an amount, and they are CANCELLED, never charged
+      throw new Error(`Payment ${payment.id} has no amount to charge`);
+    }
+
+    let result: ChargeResult;
 
     // Only gateway errors mark the payment as FAILED. A database error while
     // recording the decision propagates: nothing was committed (status and
-    // outbox event are one transaction), so the retry resumes the payment.
+    // outbox event are one transaction), so the retry resumes the payment
+    // and charges again with the same paymentId, which the gateway dedupes.
     try {
-      result = await this.simulatePaymentGateway();
+      result = await this.gateway.charge(payment.id, payment.amount);
     } catch (error) {
       this.logger.error(
         `❌ Unexpected gateway error for order ${payment.orderId}`,
@@ -293,7 +304,7 @@ export class PaymentService {
       return;
     }
 
-    if (result.approved) {
+    if (result.status === 'approved') {
       await this.approvePayment(payment);
     } else {
       await this.declinePayment(payment, result.reason);
@@ -303,6 +314,9 @@ export class PaymentService {
   private async cancelPaymentByStatus(payment: Payment) {
     switch (payment.status) {
       case PaymentStatus.APPROVED:
+        // Refund first: if marking REFUNDED fails, the retry refunds again
+        // (idempotent on paymentId) instead of leaving the customer charged
+        await this.gateway.refund(payment.id);
         await this.transitionOrThrow(payment, PaymentStatus.REFUNDED);
         this.metrics.incrementPaymentsRefunded();
         this.logger.log(
@@ -359,11 +373,10 @@ export class PaymentService {
     }
   }
 
-  private async declinePayment(payment: Payment, reason?: string) {
+  private async declinePayment(payment: Payment, failureReason: string) {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.PAYMENT_DECLINE_DURATION,
     );
-    const failureReason = reason ?? DEFAULT_DECLINE_REASON;
 
     try {
       if (
@@ -380,7 +393,7 @@ export class PaymentService {
         return;
       }
 
-      this.metrics.incrementPaymentsDeclined(reason ?? 'insufficient_funds');
+      this.metrics.incrementPaymentsDeclined(failureReason);
       this.logger.warn(`⚠️ Payment declined for order ${payment.orderId}`);
     } finally {
       endTimer();
@@ -505,26 +518,6 @@ export class PaymentService {
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
     };
-  }
-
-  /**
-   * A real gateway integration must send payment.id as the idempotency
-   * key: a resumed PROCESSING payment may be charged again otherwise.
-   */
-  private async simulatePaymentGateway(): Promise<{
-    approved: boolean;
-    reason?: string;
-  }> {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    /**
-     * 20% of the time, the payment is declined due to insufficient funds
-     */
-    if (Math.random() < 0.2) {
-      return { approved: false, reason: DEFAULT_DECLINE_REASON };
-    }
-
-    return { approved: true };
   }
 }
 

@@ -5,6 +5,7 @@ import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import { CancelReason } from '@contracts/order-events';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
+import { ChargeResult, PaymentGateway } from '../domain/ports/payment-gateway';
 import {
   ConcurrentPaymentUpdateError,
   PaymentService,
@@ -125,6 +126,16 @@ function makeFakePrisma() {
   return { prisma, payments, outbox, byOrder, seed };
 }
 
+/** Deterministic gateway: approves unless a test says otherwise */
+function makeGateway() {
+  return {
+    charge: jest
+      .fn<Promise<ChargeResult>, [string, number]>()
+      .mockResolvedValue({ status: 'approved' }),
+    refund: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
+  };
+}
+
 function makeMetrics() {
   return {
     startMessageProcessingTimer: jest.fn(() => jest.fn()),
@@ -140,20 +151,19 @@ describe('PaymentService', () => {
   let fake: ReturnType<typeof makeFakePrisma>;
   let metrics: ReturnType<typeof makeMetrics>;
   let service: PaymentService;
-  let gateway: jest.SpyInstance;
+  let gateway: ReturnType<typeof makeGateway>;
 
   const orderCreated = { orderId: 'order-1', userId: 'user-1', total: 100 };
 
   beforeEach(() => {
     fake = makeFakePrisma();
     metrics = makeMetrics();
+    gateway = makeGateway();
     service = new PaymentService(
       fake.prisma as never,
       metrics as unknown as PaymentMetricsService,
+      gateway as PaymentGateway,
     );
-    gateway = jest
-      .spyOn(service as never, 'simulatePaymentGateway')
-      .mockResolvedValue({ approved: true } as never);
   });
 
   const outboxRoutingKeys = () => fake.outbox.map((r) => r.routingKey);
@@ -164,7 +174,9 @@ describe('PaymentService', () => {
     it('approves and writes PaymentApproved to the outbox', async () => {
       await service.handleOrderCreated(orderCreated);
 
-      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
+      const payment = fake.byOrder('order-1')!;
+      expect(gateway.charge).toHaveBeenCalledWith(payment.id, 100);
+      expect(payment.status).toBe(PaymentStatus.APPROVED);
       expect(fake.outbox).toEqual([
         expect.objectContaining({
           exchange: Exchanges.PAYMENTS,
@@ -177,10 +189,10 @@ describe('PaymentService', () => {
     });
 
     it('declines and publishes PaymentDeclined', async () => {
-      gateway.mockResolvedValue({
-        approved: false,
+      gateway.charge.mockResolvedValue({
+        status: 'declined',
         reason: 'No funds',
-      } as never);
+      });
 
       await service.handleOrderCreated(orderCreated);
 
@@ -194,7 +206,7 @@ describe('PaymentService', () => {
     });
 
     it('marks FAILED only on gateway errors', async () => {
-      gateway.mockRejectedValue(new Error('gateway timeout') as never);
+      gateway.charge.mockRejectedValue(new Error('gateway timeout'));
 
       await service.handleOrderCreated(orderCreated);
 
@@ -235,7 +247,7 @@ describe('PaymentService', () => {
 
         await service.handleOrderCreated(orderCreated);
 
-        expect(gateway).not.toHaveBeenCalled();
+        expect(gateway.charge).not.toHaveBeenCalled();
         expect(fake.outbox).toHaveLength(0);
       },
     );
@@ -245,7 +257,7 @@ describe('PaymentService', () => {
 
       await service.handleOrderCreated(orderCreated);
 
-      expect(gateway).toHaveBeenCalledTimes(1);
+      expect(gateway.charge).toHaveBeenCalledTimes(1);
       expect(fake.payments.size).toBe(1);
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
     });
@@ -257,20 +269,20 @@ describe('PaymentService', () => {
 
         await service.handleOrderCreated(orderCreated);
 
-        expect(gateway).not.toHaveBeenCalled();
+        expect(gateway.charge).not.toHaveBeenCalled();
         expect(fake.outbox).toHaveLength(0);
         expect(fake.byOrder('order-1')?.status).toBe(status);
       },
     );
 
     it('does not approve if the order was cancelled during the gateway call', async () => {
-      gateway.mockImplementation(() => {
+      gateway.charge.mockImplementation(() => {
         const current = fake.byOrder('order-1')!;
         fake.payments.set(current.id, {
           ...current,
           status: PaymentStatus.CANCELLED,
         });
-        return Promise.resolve({ approved: true });
+        return Promise.resolve({ status: 'approved' });
       });
 
       await service.handleOrderCreated(orderCreated);
@@ -287,7 +299,7 @@ describe('PaymentService', () => {
 
       await service.resumePayment(stuck as never);
 
-      expect(gateway).toHaveBeenCalledTimes(1);
+      expect(gateway.charge).toHaveBeenCalledTimes(1);
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
       expect(outboxRoutingKeys()).toEqual([RoutingKeys.PAYMENT_APPROVED]);
     });
@@ -310,13 +322,26 @@ describe('PaymentService', () => {
       cancelledAt: new Date(),
     };
 
-    it('refunds an APPROVED payment', async () => {
-      fake.seed('order-1', PaymentStatus.APPROVED);
+    it('refunds an APPROVED payment through the gateway', async () => {
+      const approved = fake.seed('order-1', PaymentStatus.APPROVED);
 
       await service.handleOrderCancelled(cancelled);
 
+      expect(gateway.refund).toHaveBeenCalledWith(approved.id);
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.REFUNDED);
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the payment APPROVED when the gateway refund fails, so the retry refunds it', async () => {
+      fake.seed('order-1', PaymentStatus.APPROVED);
+      gateway.refund.mockRejectedValueOnce(new Error('provider down'));
+
+      await expect(service.handleOrderCancelled(cancelled)).rejects.toThrow(
+        'provider down',
+      );
+
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
+      expect(metrics.incrementPaymentsRefunded).not.toHaveBeenCalled();
     });
 
     it('cancels a PROCESSING payment', async () => {
@@ -357,7 +382,7 @@ describe('PaymentService', () => {
       await service.handleOrderCancelled(cancelled);
       await service.handleOrderCreated(orderCreated);
 
-      expect(gateway).not.toHaveBeenCalled();
+      expect(gateway.charge).not.toHaveBeenCalled();
       expect(fake.outbox).toHaveLength(0);
       expect(fake.payments.size).toBe(1);
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
