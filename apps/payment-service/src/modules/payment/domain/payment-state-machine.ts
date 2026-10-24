@@ -1,4 +1,4 @@
-import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
+import { PaymentStatus } from './payment-status';
 
 /**
  * Allowed payment status transitions.

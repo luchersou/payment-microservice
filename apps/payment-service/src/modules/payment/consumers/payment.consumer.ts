@@ -21,14 +21,16 @@ import {
 } from '@contracts/order-events';
 
 import { PaymentMetricsService } from '../../metrics/metrics.service';
-import { PaymentService } from '../services/payment.service';
+import { CancelPaymentUseCase } from '../application/cancel-payment.use-case';
+import { ProcessPaymentUseCase } from '../application/process-payment.use-case';
 
 @Injectable()
 export class PaymentConsumer {
   private readonly logger = new CorrelationLogger(PaymentConsumer.name);
 
   constructor(
-    private readonly paymentService: PaymentService,
+    private readonly processPayment: ProcessPaymentUseCase,
+    private readonly cancelPayment: CancelPaymentUseCase,
     private readonly metrics: PaymentMetricsService,
   ) {}
 
@@ -55,7 +57,7 @@ export class PaymentConsumer {
       );
 
       try {
-        await this.paymentService.handleOrderCreated(event.payload);
+        await this.processPayment.execute(event.payload);
       } catch (error) {
         this.logger.error(
           `❌ Error processing OrderCreated for order ${event.payload.orderId}`,
@@ -93,7 +95,7 @@ export class PaymentConsumer {
       );
 
       try {
-        await this.paymentService.handleOrderCancelled(event.payload);
+        await this.cancelPayment.execute(event.payload);
       } catch (error) {
         this.logger.error(
           `❌ Error processing OrderCancelled for order ${event.payload.orderId}`,

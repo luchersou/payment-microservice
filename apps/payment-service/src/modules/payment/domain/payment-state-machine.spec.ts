@@ -1,6 +1,5 @@
-import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
-
 import { canTransition } from './payment-state-machine';
+import { PaymentStatus } from './payment-status';
 
 describe('payment state machine', () => {
   it('allows cancelling a PROCESSING payment', () => {
