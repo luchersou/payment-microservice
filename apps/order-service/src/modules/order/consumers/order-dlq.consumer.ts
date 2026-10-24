@@ -21,6 +21,7 @@ import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
+  PaymentRefundedEvent,
 } from '@contracts/payment-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
@@ -29,7 +30,8 @@ import { PrismaFailedMessageRepository } from '../infra/prisma-failed-message.re
 type PaymentEvents =
   | PaymentApprovedEvent
   | PaymentDeclinedEvent
-  | PaymentFailedEvent;
+  | PaymentFailedEvent
+  | PaymentRefundedEvent;
 
 @Injectable()
 export class OrderDlqConsumer {

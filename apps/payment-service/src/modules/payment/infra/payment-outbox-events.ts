@@ -5,6 +5,7 @@ import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
+  PaymentRefundedEvent,
 } from '@contracts/payment-events';
 
 import { PaymentEvent } from '../domain/payment';
@@ -38,6 +39,15 @@ export function toPaymentOutboxRecord(event: PaymentEvent): OutboxRecord {
         RoutingKeys.PAYMENT_FAILED,
         new PaymentFailedEvent(
           { orderId: event.orderId, error: event.error },
+          correlationId,
+        ),
+      );
+    case 'PaymentRefunded':
+      return toOutboxRecord(
+        Exchanges.PAYMENTS,
+        RoutingKeys.PAYMENT_REFUNDED,
+        new PaymentRefundedEvent(
+          { orderId: event.orderId, transactionId: event.paymentId },
           correlationId,
         ),
       );

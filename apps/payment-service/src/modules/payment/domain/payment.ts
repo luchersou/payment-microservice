@@ -12,7 +12,8 @@ export class InvalidPaymentTransitionError extends Error {
 export type PaymentEvent =
   | { type: 'PaymentApproved'; paymentId: string; orderId: string }
   | { type: 'PaymentDeclined'; orderId: string; reason: string }
-  | { type: 'PaymentFailed'; orderId: string; error: string };
+  | { type: 'PaymentFailed'; orderId: string; error: string }
+  | { type: 'PaymentRefunded'; paymentId: string; orderId: string };
 
 export interface PaymentProps {
   id: string;
@@ -105,11 +106,36 @@ export class Payment {
   /** Order cancelled after the payment was APPROVED */
   refund() {
     this.moveTo(PaymentStatus.REFUNDED);
+    this.recordRefunded();
+  }
+
+  /**
+   * The order was cancelled while the charge was in flight: the payment is
+   * already CANCELLED, but the gateway charged and then refunded it. The
+   * status stays, only the refund is announced.
+   */
+  recordRefundOfLostCharge() {
+    if (this.props.status !== PaymentStatus.CANCELLED) {
+      throw new InvalidPaymentTransitionError(
+        this.id,
+        this.props.status,
+        PaymentStatus.CANCELLED,
+      );
+    }
+    this.recordRefunded();
   }
 
   /** Events recorded since the payment was loaded, emptying the list */
   pullEvents(): PaymentEvent[] {
     return this.events.splice(0);
+  }
+
+  private recordRefunded() {
+    this.events.push({
+      type: 'PaymentRefunded',
+      paymentId: this.id,
+      orderId: this.orderId,
+    });
   }
 
   private moveTo(to: PaymentStatus) {

@@ -40,6 +40,7 @@ export const QUEUE_TOPOLOGY: RabbitMQQueueConfig[] = [
       RoutingKeys.PAYMENT_APPROVED,
       RoutingKeys.PAYMENT_DECLINED,
       RoutingKeys.PAYMENT_FAILED,
+      RoutingKeys.PAYMENT_REFUNDED,
     ],
     options: ORDER_PAYMENT_RESULT_QUEUE_OPTIONS,
   },

@@ -4,6 +4,7 @@ import {
   PaymentApprovedEvent,
   PaymentDeclinedEvent,
   PaymentFailedEvent,
+  PaymentRefundedEvent,
 } from '@contracts/payment-events';
 
 import { OrderMetricsService } from '../../metrics/metrics.service';
@@ -17,6 +18,10 @@ jest.mock('@order/prisma/prisma.service', () => ({ PrismaService: class {} }));
 describe('OrderConsumer.handlePaymentEvents', () => {
   let applyPaymentResult: { execute: jest.Mock };
   let cancelOrder: { execute: jest.Mock };
+  let metrics: {
+    startMessageProcessingTimer: jest.Mock;
+    incrementPaymentRefunds: jest.Mock;
+  };
   let consumer: OrderConsumer;
 
   const amqpMsg = { properties: {} } as unknown as ConsumeMessage;
@@ -24,13 +29,15 @@ describe('OrderConsumer.handlePaymentEvents', () => {
   beforeEach(() => {
     applyPaymentResult = { execute: jest.fn() };
     cancelOrder = { execute: jest.fn() };
+    metrics = {
+      startMessageProcessingTimer: jest.fn(() => jest.fn()),
+      incrementPaymentRefunds: jest.fn(),
+    };
     consumer = new OrderConsumer(
       { execute: jest.fn() } as unknown as CreateOrderUseCase,
       cancelOrder as unknown as CancelOrderUseCase,
       applyPaymentResult as unknown as ApplyPaymentResultUseCase,
-      {
-        startMessageProcessingTimer: jest.fn(() => jest.fn()),
-      } as unknown as OrderMetricsService,
+      metrics as unknown as OrderMetricsService,
     );
   });
 
@@ -60,5 +67,16 @@ describe('OrderConsumer.handlePaymentEvents', () => {
     );
 
     expect(applyPaymentResult.execute).toHaveBeenCalledWith('o', 'failed');
+  });
+
+  it('only records PaymentRefunded, without touching the order', async () => {
+    await consumer.handlePaymentEvents(
+      new PaymentRefundedEvent({ orderId: 'o', transactionId: 't' }),
+      amqpMsg,
+    );
+
+    expect(metrics.incrementPaymentRefunds).toHaveBeenCalledTimes(1);
+    expect(applyPaymentResult.execute).not.toHaveBeenCalled();
+    expect(cancelOrder.execute).not.toHaveBeenCalled();
   });
 });

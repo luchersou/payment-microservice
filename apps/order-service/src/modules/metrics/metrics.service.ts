@@ -10,6 +10,7 @@ export class OrderMetricsService {
   private readonly ordersFailedTotal: Counter;
   private readonly dlqMessagesTotal: Counter;
   private readonly ordersStuckPendingPayment: Gauge;
+  private readonly paymentRefundsTotal: Counter;
   private readonly messageProcessingDuration: Histogram;
 
   constructor(private readonly registry: Registry) {
@@ -38,6 +39,11 @@ export class OrderMetricsService {
       name: 'order_dlq_messages_total',
       help: 'Total number of messages sent to DLQ',
       labelNames: ['queue', 'routing_key'],
+    });
+
+    this.paymentRefundsTotal = this.getOrCreateCounter({
+      name: 'order_payment_refunds_total',
+      help: 'Refunds announced by the payment service (payment.refunded)',
     });
 
     this.ordersStuckPendingPayment =
@@ -77,6 +83,10 @@ export class OrderMetricsService {
 
   incrementOrdersFailed() {
     this.ordersFailedTotal.inc();
+  }
+
+  incrementPaymentRefunds() {
+    this.paymentRefundsTotal.inc();
   }
 
   setOrdersStuckPendingPayment(count: number) {

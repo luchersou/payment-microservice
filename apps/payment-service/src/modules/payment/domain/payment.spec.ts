@@ -40,7 +40,7 @@ describe('Payment', () => {
     ]);
   });
 
-  it('cancels and refunds without announcing anything', () => {
+  it('cancels silently but announces a refund', () => {
     const processing = payment(PaymentStatus.PROCESSING);
     const approved = payment(PaymentStatus.APPROVED);
 
@@ -50,7 +50,23 @@ describe('Payment', () => {
     expect(processing.status).toBe(PaymentStatus.CANCELLED);
     expect(approved.status).toBe(PaymentStatus.REFUNDED);
     expect(processing.pullEvents()).toEqual([]);
-    expect(approved.pullEvents()).toEqual([]);
+    expect(approved.pullEvents()).toEqual([
+      { type: 'PaymentRefunded', paymentId: 'pay-1', orderId: 'order-1' },
+    ]);
+  });
+
+  it('announces the refund of a lost charge without leaving CANCELLED', () => {
+    const cancelled = payment(PaymentStatus.CANCELLED);
+
+    cancelled.recordRefundOfLostCharge();
+
+    expect(cancelled.status).toBe(PaymentStatus.CANCELLED);
+    expect(cancelled.pullEvents().map((e) => e.type)).toEqual([
+      'PaymentRefunded',
+    ]);
+    expect(() =>
+      payment(PaymentStatus.APPROVED).recordRefundOfLostCharge(),
+    ).toThrow(InvalidPaymentTransitionError);
   });
 
   it('rejects transitions the state machine does not allow', () => {

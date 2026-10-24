@@ -1,3 +1,5 @@
+import { Prisma } from '@payment/prisma/generated/prisma/client';
+
 import { OutboxRecord } from '@messaging/outbox';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 
@@ -28,7 +30,10 @@ function makeFakePrisma() {
       ({ data }: { data: Partial<Row> & { orderId: string } }) => {
         if ([...rows.values()].some((r) => r.orderId === data.orderId)) {
           return Promise.reject(
-            Object.assign(new Error('Unique'), { code: 'P2002' }),
+            new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+              code: 'P2002',
+              clientVersion: 'test',
+            }),
           );
         }
         const row: Row = {
@@ -95,6 +100,17 @@ describe('PrismaPaymentRepository', () => {
     repository = new PrismaPaymentRepository(fake.prisma as never);
   });
 
+  it('does not mistake any error with a P2002 code for a duplicate', async () => {
+    const lookalike = Object.assign(new Error('not from Prisma'), {
+      code: 'P2002',
+    });
+    fake.prisma.payment.create.mockRejectedValueOnce(lookalike);
+
+    await expect(repository.createProcessing('order-1', 100)).rejects.toBe(
+      lookalike,
+    );
+  });
+
   const processing = async () =>
     (await repository.createProcessing('order-1', 100))!;
 
@@ -125,6 +141,27 @@ describe('PrismaPaymentRepository', () => {
         routingKey: RoutingKeys.PAYMENT_DECLINED,
         payload: expect.objectContaining({
           payload: { orderId: 'order-1', reason: 'No funds' },
+        }),
+      }),
+    ]);
+  });
+
+  it('writes payment.refunded when a refund is saved', async () => {
+    const payment = await processing();
+    fake.rows.get(payment.id)!.status = PaymentStatus.APPROVED;
+    const approved = Payment.fromProps({
+      ...fake.rows.get(payment.id)!,
+    });
+    approved.refund();
+
+    await repository.save(approved);
+
+    expect(fake.outbox).toEqual([
+      expect.objectContaining({
+        exchange: Exchanges.PAYMENTS,
+        routingKey: RoutingKeys.PAYMENT_REFUNDED,
+        payload: expect.objectContaining({
+          payload: { orderId: 'order-1', transactionId: payment.id },
         }),
       }),
     ]);

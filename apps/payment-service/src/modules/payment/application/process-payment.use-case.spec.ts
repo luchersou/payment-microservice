@@ -19,9 +19,9 @@ describe('ProcessPaymentUseCase', () => {
   const status = () => payments.stored('order-1')?.status;
   const eventTypes = () => payments.events.map((e) => e.type);
 
-  /** The order gets cancelled while the gateway is charging */
-  const cancelDuringCharge = () =>
-    gateway.charge.mockImplementation(() => {
+  /** The order gets cancelled while the gateway is authorizing */
+  const cancelDuringAuthorization = () =>
+    gateway.authorize.mockImplementation(() => {
       payments.setStatus('order-1', PaymentStatus.CANCELLED);
       return Promise.resolve({ status: 'approved' });
     });
@@ -38,11 +38,12 @@ describe('ProcessPaymentUseCase', () => {
   });
 
   describe('execute (OrderCreated)', () => {
-    it('charges the amountCents with the paymentId as idempotency key and approves', async () => {
+    it('authorizes with the paymentId as idempotency key, approves, then captures', async () => {
       await useCase.execute(orderCreated);
 
       const payment = payments.stored('order-1')!;
-      expect(gateway.charge).toHaveBeenCalledWith(payment.id, 100);
+      expect(gateway.authorize).toHaveBeenCalledWith(payment.id, 100);
+      expect(gateway.capture).toHaveBeenCalledWith(payment.id);
       expect(payment.status).toBe(PaymentStatus.APPROVED);
       expect(payments.events).toEqual([
         { type: 'PaymentApproved', paymentId: payment.id, orderId: 'order-1' },
@@ -50,8 +51,34 @@ describe('ProcessPaymentUseCase', () => {
       expect(metrics.incrementPaymentsApproved).toHaveBeenCalledTimes(1);
     });
 
-    it('declines with the gateway reason', async () => {
-      gateway.charge.mockResolvedValue({
+    it('captures only after the approval is saved', async () => {
+      gateway.capture.mockImplementation(() => {
+        expect(status()).toBe(PaymentStatus.APPROVED);
+        return Promise.resolve();
+      });
+
+      await useCase.execute(orderCreated);
+
+      expect(gateway.capture).toHaveBeenCalledTimes(1);
+    });
+
+    it('captures again on redelivery when the capture failed after the approval', async () => {
+      gateway.capture.mockRejectedValueOnce(new Error('provider down'));
+
+      await expect(useCase.execute(orderCreated)).rejects.toThrow(
+        'provider down',
+      );
+      expect(status()).toBe(PaymentStatus.APPROVED);
+
+      await useCase.execute(orderCreated);
+
+      expect(gateway.authorize).toHaveBeenCalledTimes(1);
+      expect(gateway.capture).toHaveBeenCalledTimes(2);
+      expect(eventTypes()).toEqual(['PaymentApproved']);
+    });
+
+    it('declines with the gateway reason, capturing nothing', async () => {
+      gateway.authorize.mockResolvedValue({
         status: 'declined',
         reason: 'No funds',
       });
@@ -65,10 +92,11 @@ describe('ProcessPaymentUseCase', () => {
       expect(payments.events).toEqual([
         { type: 'PaymentDeclined', orderId: 'order-1', reason: 'No funds' },
       ]);
+      expect(gateway.capture).not.toHaveBeenCalled();
     });
 
     it('marks FAILED only on gateway errors', async () => {
-      gateway.charge.mockRejectedValue(new Error('gateway timeout'));
+      gateway.authorize.mockRejectedValue(new Error('gateway timeout'));
 
       await useCase.execute(orderCreated);
 
@@ -100,13 +128,13 @@ describe('ProcessPaymentUseCase', () => {
       PaymentStatus.FAILED,
       PaymentStatus.REFUNDED,
     ])(
-      'does nothing on redelivery for a %s payment (its event is already in the outbox)',
+      'never authorizes again on redelivery for a %s payment (its event is already in the outbox)',
       async (decided) => {
         payments.seed('order-1', decided);
 
         await useCase.execute(orderCreated);
 
-        expect(gateway.charge).not.toHaveBeenCalled();
+        expect(gateway.authorize).not.toHaveBeenCalled();
         expect(payments.events).toHaveLength(0);
         expect(status()).toBe(decided);
       },
@@ -117,58 +145,74 @@ describe('ProcessPaymentUseCase', () => {
 
       await useCase.execute(orderCreated);
 
-      expect(gateway.charge).toHaveBeenCalledTimes(1);
+      expect(gateway.authorize).toHaveBeenCalledTimes(1);
       expect(payments.size).toBe(1);
       expect(status()).toBe(PaymentStatus.APPROVED);
     });
 
-    it('never charges a tombstone (cancelled before OrderCreated)', async () => {
+    it('never touches the gateway for a tombstone (cancelled before OrderCreated)', async () => {
       payments.seed('order-1', PaymentStatus.CANCELLED, { amountCents: null });
 
       await useCase.execute(orderCreated);
 
-      expect(gateway.charge).not.toHaveBeenCalled();
-      expect(gateway.refund).not.toHaveBeenCalled();
+      expect(gateway.authorize).not.toHaveBeenCalled();
+      expect(gateway.release).not.toHaveBeenCalled();
       expect(status()).toBe(PaymentStatus.CANCELLED);
     });
 
-    it('does not count a refund when the cancelled payment was never charged', async () => {
+    it('counts nothing when a cancelled payment had nothing to release', async () => {
       payments.seed('order-1', PaymentStatus.CANCELLED);
-      gateway.refund.mockResolvedValue(false);
+      gateway.release.mockResolvedValue('nothing');
 
       await useCase.execute(orderCreated);
 
-      expect(gateway.charge).not.toHaveBeenCalled();
+      expect(gateway.authorize).not.toHaveBeenCalled();
+      expect(metrics.incrementAuthorizationsVoided).not.toHaveBeenCalled();
       expect(metrics.incrementPaymentsRefunded).not.toHaveBeenCalled();
     });
   });
 
-  describe('cancel while the charge is in flight', () => {
-    it('does not approve and refunds the charge', async () => {
-      cancelDuringCharge();
+  describe('cancel while the authorization is in flight', () => {
+    it('voids the authorization: the customer is never charged', async () => {
+      cancelDuringAuthorization();
 
       await useCase.execute(orderCreated);
 
       const payment = payments.stored('order-1')!;
       expect(payment.status).toBe(PaymentStatus.CANCELLED);
-      expect(payments.events).toHaveLength(0);
+      expect(gateway.capture).not.toHaveBeenCalled();
+      expect(gateway.release).toHaveBeenCalledWith(payment.id);
+      expect(metrics.incrementAuthorizationsVoided).toHaveBeenCalledTimes(1);
       expect(metrics.incrementPaymentsApproved).not.toHaveBeenCalled();
-      expect(gateway.refund).toHaveBeenCalledWith(payment.id);
-      expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+      expect(metrics.incrementPaymentsRefunded).not.toHaveBeenCalled();
+      // No money moved, so there is nothing to announce
+      expect(payments.events).toHaveLength(0);
     });
 
-    it('retries a failed refund on redelivery', async () => {
-      cancelDuringCharge();
-      gateway.refund.mockRejectedValueOnce(new Error('provider down'));
+    it('retries a failed release on redelivery', async () => {
+      cancelDuringAuthorization();
+      gateway.release.mockRejectedValueOnce(new Error('provider down'));
 
       await expect(useCase.execute(orderCreated)).rejects.toThrow(
         'provider down',
       );
       await useCase.execute(orderCreated);
 
-      expect(gateway.charge).toHaveBeenCalledTimes(1);
-      expect(gateway.refund).toHaveBeenCalledTimes(2);
+      expect(gateway.authorize).toHaveBeenCalledTimes(1);
+      expect(gateway.release).toHaveBeenCalledTimes(2);
+      expect(gateway.capture).not.toHaveBeenCalled();
+      expect(metrics.incrementAuthorizationsVoided).toHaveBeenCalledTimes(1);
+    });
+
+    it('announces a refund if the provider reports a capture was given back', async () => {
+      cancelDuringAuthorization();
+      gateway.release.mockResolvedValue('refunded');
+
+      await useCase.execute(orderCreated);
+
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+      expect(eventTypes()).toEqual(['PaymentRefunded']);
+      expect(status()).toBe(PaymentStatus.CANCELLED);
     });
   });
 
@@ -178,7 +222,8 @@ describe('ProcessPaymentUseCase', () => {
 
       await useCase.resume(stuck);
 
-      expect(gateway.charge).toHaveBeenCalledTimes(1);
+      expect(gateway.authorize).toHaveBeenCalledTimes(1);
+      expect(gateway.capture).toHaveBeenCalledTimes(1);
       expect(status()).toBe(PaymentStatus.APPROVED);
       expect(eventTypes()).toEqual(['PaymentApproved']);
     });
@@ -186,7 +231,7 @@ describe('ProcessPaymentUseCase', () => {
     it('records nothing if a consumer decided the payment in the meantime', async () => {
       const stuck = payments.seed('order-1', PaymentStatus.PROCESSING);
       payments.setStatus('order-1', PaymentStatus.DECLINED);
-      gateway.charge.mockResolvedValue({
+      gateway.authorize.mockResolvedValue({
         status: 'declined',
         reason: 'No funds',
       });

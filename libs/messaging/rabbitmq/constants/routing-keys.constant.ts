@@ -7,4 +7,5 @@ export const RoutingKeys = {
   PAYMENT_APPROVED: 'payment.approved',
   PAYMENT_DECLINED: 'payment.declined',
   PAYMENT_FAILED: 'payment.failed',
+  PAYMENT_REFUNDED: 'payment.refunded',
 } as const;

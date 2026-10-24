@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import type { Payment as PaymentRecord } from '@payment/prisma/generated/prisma/client';
+import {
+  type Payment as PaymentRecord,
+  Prisma,
+} from '@payment/prisma/generated/prisma/client';
 import { PrismaService } from '@payment/prisma/prisma.service';
 
 import { Payment } from '../domain/payment';
@@ -103,10 +106,10 @@ function toDomain(record: PaymentRecord): Payment {
   });
 }
 
+/** Prisma's unique constraint violation: the record already exists */
 function isUniqueConstraintError(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 'P2002'
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
   );
 }

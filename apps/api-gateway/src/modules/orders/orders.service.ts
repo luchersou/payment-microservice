@@ -58,14 +58,16 @@ export class OrdersService {
     return {
       orderId,
       message: 'Order creation request accepted',
-      status: 'PENDING',
+      // The status every order starts in (order-service OrderStatus)
+      status: 'PENDING_PAYMENT',
     };
   }
 
   async cancelOrder(orderId: string) {
-    const event = new OrderCancelRequestedEvent({
-      orderId,
-    });
+    const event = new OrderCancelRequestedEvent(
+      { orderId },
+      CorrelationIdService.getId(),
+    );
 
     await publishEvent(
       this.AmqpConnection,
