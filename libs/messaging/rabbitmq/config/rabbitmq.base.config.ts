@@ -4,6 +4,7 @@ import {
 } from '@golevelup/nestjs-rabbitmq';
 
 import { Exchanges } from '../constants';
+import { QUEUE_TOPOLOGY } from './topology.config';
 
 export function createRabbitMQConfig(uri: string): RabbitMQConfig {
   return {
@@ -30,5 +31,7 @@ export function createRabbitMQConfig(uri: string): RabbitMQConfig {
       { name: Exchanges.PAYMENTS, type: 'topic', options: { durable: true } },
       { name: Exchanges.DLX, type: 'topic', options: { durable: true } },
     ],
+
+    queues: QUEUE_TOPOLOGY,
   };
 }

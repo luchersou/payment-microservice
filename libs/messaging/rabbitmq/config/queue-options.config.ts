@@ -42,6 +42,9 @@ export const PAYMENT_ORDER_CREATED_QUEUE_OPTIONS = {
   },
 };
 
+/** DLQs only need to survive restarts; nothing dead-letters out of them */
+export const DLQ_QUEUE_OPTIONS = { durable: true };
+
 export const PAYMENT_ORDER_CANCELLED_QUEUE_OPTIONS = {
   durable: true,
   arguments: {
