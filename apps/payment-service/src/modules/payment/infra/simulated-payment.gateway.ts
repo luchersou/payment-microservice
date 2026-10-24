@@ -49,9 +49,13 @@ export class SimulatedPaymentGateway implements PaymentGateway {
     return result;
   }
 
-  async refund(paymentId: string): Promise<void> {
+  async refund(paymentId: string): Promise<boolean> {
+    if (this.charges.get(paymentId)?.status !== 'approved') return false;
+
     await this.delay();
+    this.charges.delete(paymentId);
     this.logger.log(`🏦 Refund ${paymentId}`);
+    return true;
   }
 
   private delay() {

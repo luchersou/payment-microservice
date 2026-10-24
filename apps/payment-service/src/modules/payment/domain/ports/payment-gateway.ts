@@ -14,5 +14,10 @@ export type ChargeResult =
  */
 export interface PaymentGateway {
   charge(paymentId: string, amount: number): Promise<ChargeResult>;
-  refund(paymentId: string): Promise<void>;
+  /**
+   * Gives back a successful charge. Returns false, doing nothing, when there
+   * is no charge to give back (never charged, declined, already refunded),
+   * so it is safe to call whenever a charge *may* have happened.
+   */
+  refund(paymentId: string): Promise<boolean>;
 }

@@ -140,6 +140,13 @@ export class PaymentService {
       this.logger.warn(
         `⚠️ Order ${payload.orderId} was cancelled before payment, not charging`,
       );
+      // A payment created by OrderCreated (it has an amount; a tombstone does
+      // not) may have been charged before the cancel won, with the refund
+      // failing afterwards. This redelivery finishes it; refund is a no-op
+      // when nothing was charged.
+      if (payment.amount !== null) {
+        await this.refundLostApproval(payment);
+      }
       return;
     }
 
@@ -346,6 +353,15 @@ export class PaymentService {
     }
   }
 
+  private async refundLostApproval(payment: Payment) {
+    if (await this.gateway.refund(payment.id)) {
+      this.metrics.incrementPaymentsRefunded();
+      this.logger.log(
+        `💰 Charge of cancelled payment ${payment.id} refunded for order ${payment.orderId}`,
+      );
+    }
+  }
+
   private async approvePayment(payment: Payment) {
     const endTimer = this.metrics.startMessageProcessingTimer(
       MetricNames.PAYMENT_APPROVAL_DURATION,
@@ -360,9 +376,14 @@ export class PaymentService {
           this.approvedEvent(payment),
         ))
       ) {
+        // The order was cancelled while the charge was in flight: the
+        // customer was charged for a payment that is already CANCELLED.
+        // A refund failure propagates, and the retry refunds again from
+        // handleOrderCreated.
         this.logger.warn(
-          `⚠️ Payment ${payment.id} changed while processing (order cancelled?), not approving`,
+          `⚠️ Payment ${payment.id} changed while charging (order cancelled?), refunding the charge`,
         );
+        await this.refundLostApproval(payment);
         return;
       }
 

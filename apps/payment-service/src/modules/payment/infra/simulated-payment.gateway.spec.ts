@@ -33,4 +33,20 @@ describe('SimulatedPaymentGateway', () => {
     expect(second).toEqual(first);
     expect(draws).toEqual([0.1]);
   });
+
+  it('refunds an approved charge only once', async () => {
+    const gateway = gatewayWith(0.5);
+    await gateway.charge('pay-1', 1000);
+
+    await expect(gateway.refund('pay-1')).resolves.toBe(true);
+    await expect(gateway.refund('pay-1')).resolves.toBe(false);
+  });
+
+  it('has nothing to refund for a payment never charged or declined', async () => {
+    const gateway = gatewayWith(0.1);
+    await gateway.charge('declined', 1000);
+
+    await expect(gateway.refund('never-charged')).resolves.toBe(false);
+    await expect(gateway.refund('declined')).resolves.toBe(false);
+  });
 });

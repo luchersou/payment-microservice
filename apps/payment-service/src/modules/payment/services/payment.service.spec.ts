@@ -132,7 +132,7 @@ function makeGateway() {
     charge: jest
       .fn<Promise<ChargeResult>, [string, number]>()
       .mockResolvedValue({ status: 'approved' }),
-    refund: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
+    refund: jest.fn<Promise<boolean>, [string]>().mockResolvedValue(true),
   };
 }
 
@@ -290,6 +290,63 @@ describe('PaymentService', () => {
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
       expect(fake.outbox).toHaveLength(0);
       expect(metrics.incrementPaymentsApproved).not.toHaveBeenCalled();
+    });
+
+    it('refunds the charge when the cancel wins the race against the approval', async () => {
+      gateway.charge.mockImplementation((paymentId: string) => {
+        fake.payments.set(paymentId, {
+          ...fake.payments.get(paymentId)!,
+          status: PaymentStatus.CANCELLED,
+        });
+        return Promise.resolve({ status: 'approved' });
+      });
+
+      await service.handleOrderCreated(orderCreated);
+
+      const payment = fake.byOrder('order-1')!;
+      expect(gateway.refund).toHaveBeenCalledWith(payment.id);
+      expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+      expect(payment.status).toBe(PaymentStatus.CANCELLED);
+      expect(fake.outbox).toHaveLength(0);
+    });
+
+    it('retries a failed refund of a lost approval on redelivery', async () => {
+      gateway.charge.mockImplementation((paymentId: string) => {
+        fake.payments.set(paymentId, {
+          ...fake.payments.get(paymentId)!,
+          status: PaymentStatus.CANCELLED,
+        });
+        return Promise.resolve({ status: 'approved' });
+      });
+      gateway.refund.mockRejectedValueOnce(new Error('provider down'));
+
+      await expect(service.handleOrderCreated(orderCreated)).rejects.toThrow(
+        'provider down',
+      );
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway.charge).toHaveBeenCalledTimes(1);
+      expect(gateway.refund).toHaveBeenCalledTimes(2);
+      expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not count a refund when the cancelled payment was never charged', async () => {
+      fake.seed('order-1', PaymentStatus.CANCELLED);
+      gateway.refund.mockResolvedValue(false);
+
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway.charge).not.toHaveBeenCalled();
+      expect(metrics.incrementPaymentsRefunded).not.toHaveBeenCalled();
+    });
+
+    it('does not call the gateway at all for a tombstone (no amount)', async () => {
+      fake.seed('order-1', PaymentStatus.CANCELLED, { amount: null });
+
+      await service.handleOrderCreated(orderCreated);
+
+      expect(gateway.charge).not.toHaveBeenCalled();
+      expect(gateway.refund).not.toHaveBeenCalled();
     });
   });
 
