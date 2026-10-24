@@ -63,9 +63,10 @@ export class OrdersService {
   }
 
   async cancelOrder(orderId: string) {
-    const event = new OrderCancelRequestedEvent({
-      orderId,
-    });
+    const event = new OrderCancelRequestedEvent(
+      { orderId },
+      CorrelationIdService.getId(),
+    );
 
     await publishEvent(
       this.AmqpConnection,
