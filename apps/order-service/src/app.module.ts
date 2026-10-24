@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { PrismaModule } from '@order/prisma/prisma.module';
 import { PrismaService } from '@order/prisma/prisma.service';
@@ -18,6 +19,7 @@ import { OrderModule } from './modules/order/order.module';
       isGlobal: true,
       validate: createEnvValidator(OrderEnvironment),
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     RabbitMQModule,
     OutboxModule.forRoot(PrismaService),

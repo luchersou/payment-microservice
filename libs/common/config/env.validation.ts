@@ -46,6 +46,16 @@ export class DatabaseEnvironment extends BaseEnvironment {
   @IsInt()
   @Min(100)
   OUTBOX_PUBLISH_TIMEOUT_MS = 5000;
+
+  /** How often to look for records stuck mid-saga */
+  @IsInt()
+  @Min(1000)
+  RECONCILIATION_INTERVAL_MS = 60_000;
+
+  /** How long a record may stay PROCESSING / PENDING_PAYMENT before it counts as stuck */
+  @IsInt()
+  @Min(1)
+  RECONCILIATION_STUCK_AFTER_MINUTES = 5;
 }
 
 /**

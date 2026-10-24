@@ -281,6 +281,28 @@ describe('PaymentService', () => {
     });
   });
 
+  describe('resumePayment (reconciliation)', () => {
+    it('charges a stuck PROCESSING payment and records its result', async () => {
+      const stuck = fake.seed('order-1', PaymentStatus.PROCESSING);
+
+      await service.resumePayment(stuck as never);
+
+      expect(gateway).toHaveBeenCalledTimes(1);
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.PAYMENT_APPROVED]);
+    });
+
+    it('does nothing if a consumer decided the payment in the meantime', async () => {
+      const stuck = fake.seed('order-1', PaymentStatus.PROCESSING);
+      fake.payments.set(stuck.id, { ...stuck, status: PaymentStatus.DECLINED });
+
+      await service.resumePayment(stuck as never);
+
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.DECLINED);
+      expect(fake.outbox).toHaveLength(0);
+    });
+  });
+
   describe('handleOrderCancelled', () => {
     const cancelled = {
       orderId: 'order-1',

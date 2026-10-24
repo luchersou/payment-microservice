@@ -155,6 +155,18 @@ export class PaymentService {
   }
 
   /**
+   * Resumes a payment left in PROCESSING (its OrderCreated went to the DLQ,
+   * or the service died mid-charge). Safe to race with a consumer: every
+   * decision is a conditional update, so only one of them can win.
+   */
+  async resumePayment(payment: Payment) {
+    this.logger.warn(
+      `🔧 Resuming payment ${payment.id} stuck in PROCESSING for order ${payment.orderId}`,
+    );
+    await this.processPayment(payment);
+  }
+
+  /**
    * OrderCreated and OrderCancelled arrive on separate queues, so the cancel
    * may be handled first. Instead of waiting for the payment (a bounded retry
    * that, once exhausted, let the order be charged anyway), a CANCELLED
