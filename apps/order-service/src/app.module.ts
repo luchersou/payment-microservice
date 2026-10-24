@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { PrismaModule } from '@order/prisma/prisma.module';
+import { PrismaService } from '@order/prisma/prisma.service';
 
 import { createEnvValidator } from '@common/config';
+import { OutboxModule } from '@messaging/outbox';
 import { RabbitMQModule } from '@messaging/rabbitmq';
 
 import { OrderEnvironment } from './config/env.validation';
@@ -18,6 +20,7 @@ import { OrderModule } from './modules/order/order.module';
     }),
     PrismaModule,
     RabbitMQModule,
+    OutboxModule.forRoot(PrismaService),
     OrderModule,
     HealthModule,
   ],

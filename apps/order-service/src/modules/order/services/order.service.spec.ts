@@ -1,6 +1,6 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { OrderStatus } from '@order/prisma/generated/prisma/enums';
 
+import { OutboxRecord } from '@messaging/outbox';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import { CancelReason } from '@contracts/order-events';
 
@@ -71,7 +71,33 @@ function makeFakePrisma() {
       updatedAt: new Date(),
     });
 
-  return { prisma: { order }, orders, seed };
+  const outbox: OutboxRecord[] = [];
+  const outboxMessage = {
+    create: jest.fn(({ data }: { data: OutboxRecord }) => {
+      outbox.push(data);
+      return Promise.resolve(data);
+    }),
+  };
+
+  const client = { order, outboxMessage };
+  const prisma = {
+    ...client,
+    // Runs on the same fake, restoring it if the callback throws (rollback)
+    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const snapshot = new Map(orders);
+      const outboxLength = outbox.length;
+      try {
+        return await fn(client);
+      } catch (error) {
+        orders.clear();
+        snapshot.forEach((value, key) => orders.set(key, value));
+        outbox.length = outboxLength;
+        throw error;
+      }
+    }),
+  };
+
+  return { prisma, orders, outbox, seed };
 }
 
 function makeMetrics() {
@@ -86,66 +112,70 @@ function makeMetrics() {
 
 describe('OrderService', () => {
   let fake: ReturnType<typeof makeFakePrisma>;
-  let amqp: { publish: jest.Mock };
   let metrics: ReturnType<typeof makeMetrics>;
   let service: OrderService;
 
   beforeEach(() => {
     fake = makeFakePrisma();
-    amqp = { publish: jest.fn().mockResolvedValue(true) };
     metrics = makeMetrics();
     service = new OrderService(
-      amqp as unknown as AmqpConnection,
       fake.prisma as never,
       metrics as unknown as OrderMetricsService,
     );
   });
 
+  const outboxRoutingKeys = () => fake.outbox.map((r) => r.routingKey);
+
   describe('createOrder', () => {
     const payload = { orderId: 'order-1', userId: 'user-1', total: 100 };
 
-    it('persists the order with the given id and publishes OrderCreated', async () => {
+    it('persists the order with the given id and writes OrderCreated to the outbox', async () => {
       await service.createOrder(payload);
 
       expect(fake.orders.get('order-1')?.status).toBe(
         OrderStatus.PENDING_PAYMENT,
       );
       expect(metrics.incrementOrdersCreated).toHaveBeenCalledTimes(1);
-      expect(amqp.publish).toHaveBeenCalledWith(
-        Exchanges.ORDERS,
-        RoutingKeys.ORDER_CREATED,
+      expect(fake.outbox).toEqual([
         expect.objectContaining({
-          payload: { orderId: 'order-1', userId: 'user-1', total: 100 },
+          exchange: Exchanges.ORDERS,
+          routingKey: RoutingKeys.ORDER_CREATED,
+          payload: expect.objectContaining({
+            payload: { orderId: 'order-1', userId: 'user-1', total: 100 },
+          }),
         }),
-        expect.objectContaining({ persistent: true }),
-      );
+      ]);
     });
 
-    it('does not create a duplicate on redelivery and republishes while pending', async () => {
+    it('does not create a duplicate order nor event on redelivery', async () => {
       await service.createOrder(payload);
       await service.createOrder(payload);
 
       expect(fake.orders.size).toBe(1);
       expect(metrics.incrementOrdersCreated).toHaveBeenCalledTimes(1);
-      expect(amqp.publish).toHaveBeenCalledTimes(2);
+      expect(fake.outbox).toHaveLength(1);
     });
 
-    it('recovers when the first attempt persisted but failed to publish', async () => {
-      amqp.publish.mockRejectedValueOnce(new Error('broker down'));
+    it('rolls the order back when its event cannot be written, so the retry creates both', async () => {
+      fake.prisma.outboxMessage.create.mockRejectedValueOnce(
+        new Error('db down'),
+      );
 
-      await expect(service.createOrder(payload)).rejects.toThrow('broker down');
+      await expect(service.createOrder(payload)).rejects.toThrow('db down');
+      expect(fake.orders.size).toBe(0);
+
       await service.createOrder(payload);
 
       expect(fake.orders.size).toBe(1);
-      expect(amqp.publish).toHaveBeenCalledTimes(2);
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.ORDER_CREATED]);
     });
 
-    it('does not republish when the order already progressed', async () => {
+    it('writes nothing when the order already progressed', async () => {
       fake.seed('order-1', OrderStatus.PAID);
 
       await service.createOrder(payload);
 
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
     });
   });
 
@@ -196,7 +226,7 @@ describe('OrderService', () => {
 
   describe('cancelByUser', () => {
     it.each([OrderStatus.PENDING_PAYMENT, OrderStatus.PAID])(
-      'cancels a %s order and publishes OrderCancelled',
+      'cancels a %s order and writes OrderCancelled to the outbox',
       async (status) => {
         fake.seed('o', status);
 
@@ -206,17 +236,18 @@ describe('OrderService', () => {
         expect(metrics.incrementOrdersCancelled).toHaveBeenCalledWith(
           CancelReason.USER_REQUESTED,
         );
-        expect(amqp.publish).toHaveBeenCalledWith(
-          Exchanges.ORDERS,
-          RoutingKeys.ORDER_CANCELLED,
+        expect(fake.outbox).toEqual([
           expect.objectContaining({
+            exchange: Exchanges.ORDERS,
+            routingKey: RoutingKeys.ORDER_CANCELLED,
             payload: expect.objectContaining({
-              orderId: 'o',
-              reason: CancelReason.USER_REQUESTED,
+              payload: expect.objectContaining({
+                orderId: 'o',
+                reason: CancelReason.USER_REQUESTED,
+              }),
             }),
           }),
-          expect.anything(),
-        );
+        ]);
       },
     );
 
@@ -230,9 +261,10 @@ describe('OrderService', () => {
       expect(metrics.incrementOrdersCancelled).toHaveBeenCalledWith(
         CancelReason.USER_REQUESTED,
       );
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.ORDER_CANCELLED]);
     });
 
-    it('a create request handled after the tombstone never publishes OrderCreated', async () => {
+    it('a create request handled after the tombstone never writes OrderCreated', async () => {
       await service.cancelByUser('order-1');
       await service.createOrder({
         orderId: 'order-1',
@@ -242,9 +274,7 @@ describe('OrderService', () => {
 
       expect(fake.orders.get('order-1')?.status).toBe(OrderStatus.CANCELLED);
       expect(metrics.incrementOrdersCreated).not.toHaveBeenCalled();
-      expect(
-        amqp.publish.mock.calls.map((call: unknown[]) => call[1]),
-      ).not.toContain(RoutingKeys.ORDER_CREATED);
+      expect(outboxRoutingKeys()).not.toContain(RoutingKeys.ORDER_CREATED);
     });
 
     it('cancels the order the create request persisted between the update and the tombstone insert', async () => {
@@ -257,14 +287,15 @@ describe('OrderService', () => {
       expect(fake.orders.size).toBe(1);
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.CANCELLED);
       expect(metrics.incrementOrdersCancelled).toHaveBeenCalledTimes(1);
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.ORDER_CANCELLED]);
     });
 
-    it('republishes without counting again when already cancelled', async () => {
+    it('writes nothing again when already cancelled (redelivery)', async () => {
       fake.seed('o', OrderStatus.CANCELLED);
 
       await service.cancelByUser('o');
 
-      expect(amqp.publish).toHaveBeenCalledTimes(1);
+      expect(fake.outbox).toHaveLength(0);
       expect(metrics.incrementOrdersCancelled).not.toHaveBeenCalled();
     });
 
@@ -274,7 +305,7 @@ describe('OrderService', () => {
       await service.cancelByUser('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.FAILED);
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
     });
   });
 
@@ -285,7 +316,7 @@ describe('OrderService', () => {
       await service.failOrder('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.FAILED);
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
       expect(metrics.incrementOrdersCancelled).not.toHaveBeenCalled();
     });
 
@@ -295,7 +326,7 @@ describe('OrderService', () => {
       await service.failOrder('o');
 
       expect(fake.orders.get('o')?.status).toBe(OrderStatus.PAID);
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
     });
 
     it('ignores an unknown order', async () => {

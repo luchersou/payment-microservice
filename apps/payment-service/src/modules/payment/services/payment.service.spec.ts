@@ -1,6 +1,6 @@
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { PaymentStatus } from '@payment/prisma/generated/prisma/enums';
 
+import { OutboxRecord } from '@messaging/outbox';
 import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import { CancelReason } from '@contracts/order-events';
 
@@ -96,7 +96,33 @@ function makeFakePrisma() {
     return p;
   };
 
-  return { prisma: { payment }, payments, byOrder, seed };
+  const outbox: OutboxRecord[] = [];
+  const outboxMessage = {
+    create: jest.fn(({ data }: { data: OutboxRecord }) => {
+      outbox.push(data);
+      return Promise.resolve(data);
+    }),
+  };
+
+  const client = { payment, outboxMessage };
+  const prisma = {
+    ...client,
+    // Runs on the same fake, restoring it if the callback throws (rollback)
+    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const snapshot = new Map(payments);
+      const outboxLength = outbox.length;
+      try {
+        return await fn(client);
+      } catch (error) {
+        payments.clear();
+        snapshot.forEach((value, key) => payments.set(key, value));
+        outbox.length = outboxLength;
+        throw error;
+      }
+    }),
+  };
+
+  return { prisma, payments, outbox, byOrder, seed };
 }
 
 function makeMetrics() {
@@ -112,7 +138,6 @@ function makeMetrics() {
 
 describe('PaymentService', () => {
   let fake: ReturnType<typeof makeFakePrisma>;
-  let amqp: { publish: jest.Mock };
   let metrics: ReturnType<typeof makeMetrics>;
   let service: PaymentService;
   let gateway: jest.SpyInstance;
@@ -121,11 +146,9 @@ describe('PaymentService', () => {
 
   beforeEach(() => {
     fake = makeFakePrisma();
-    amqp = { publish: jest.fn().mockResolvedValue(true) };
     metrics = makeMetrics();
     service = new PaymentService(
       fake.prisma as never,
-      amqp as unknown as AmqpConnection,
       metrics as unknown as PaymentMetricsService,
     );
     gateway = jest
@@ -133,25 +156,24 @@ describe('PaymentService', () => {
       .mockResolvedValue({ approved: true } as never);
   });
 
-  const publishedRoutingKeys = () =>
-    amqp.publish.mock.calls.map((call: unknown[]) => call[1]);
+  const outboxRoutingKeys = () => fake.outbox.map((r) => r.routingKey);
 
-  const publishedPayload = () =>
-    (amqp.publish.mock.calls[0][2] as { payload: unknown }).payload;
+  const outboxPayload = () => fake.outbox[0].payload.payload;
 
   describe('handleOrderCreated', () => {
-    it('approves and publishes PaymentApproved', async () => {
+    it('approves and writes PaymentApproved to the outbox', async () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
-      expect(amqp.publish).toHaveBeenCalledWith(
-        Exchanges.PAYMENTS,
-        RoutingKeys.PAYMENT_APPROVED,
+      expect(fake.outbox).toEqual([
         expect.objectContaining({
-          payload: expect.objectContaining({ orderId: 'order-1' }),
+          exchange: Exchanges.PAYMENTS,
+          routingKey: RoutingKeys.PAYMENT_APPROVED,
+          payload: expect.objectContaining({
+            payload: expect.objectContaining({ orderId: 'order-1' }),
+          }),
         }),
-        expect.objectContaining({ persistent: true }),
-      );
+      ]);
     });
 
     it('declines and publishes PaymentDeclined', async () => {
@@ -164,8 +186,8 @@ describe('PaymentService', () => {
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.DECLINED);
       expect(fake.byOrder('order-1')?.failureReason).toBe('No funds');
-      expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_DECLINED]);
-      expect(publishedPayload()).toEqual({
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.PAYMENT_DECLINED]);
+      expect(outboxPayload()).toEqual({
         orderId: 'order-1',
         reason: 'No funds',
       });
@@ -178,60 +200,45 @@ describe('PaymentService', () => {
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.FAILED);
       expect(fake.byOrder('order-1')?.failureReason).toBe('gateway timeout');
-      expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_FAILED]);
-      expect(publishedPayload()).toEqual({
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.PAYMENT_FAILED]);
+      expect(outboxPayload()).toEqual({
         orderId: 'order-1',
         error: 'gateway timeout',
       });
     });
 
-    it('republishes a DECLINED result with the persisted reason', async () => {
-      fake.seed('order-1', PaymentStatus.DECLINED, {
-        failureReason: 'Card expired',
-      });
-
-      await service.handleOrderCreated(orderCreated);
-
-      expect(gateway).not.toHaveBeenCalled();
-      expect(publishedPayload()).toEqual({
-        orderId: 'order-1',
-        reason: 'Card expired',
-      });
-    });
-
-    it('republishes a FAILED result with the persisted reason', async () => {
-      fake.seed('order-1', PaymentStatus.FAILED, {
-        failureReason: 'gateway timeout',
-      });
-
-      await service.handleOrderCreated(orderCreated);
-
-      expect(gateway).not.toHaveBeenCalled();
-      expect(publishedPayload()).toEqual({
-        orderId: 'order-1',
-        error: 'gateway timeout',
-      });
-    });
-
-    it('keeps APPROVED and rethrows when publishing the result fails', async () => {
-      amqp.publish.mockRejectedValueOnce(new Error('broker down'));
-
-      await expect(service.handleOrderCreated(orderCreated)).rejects.toThrow(
-        'broker down',
+    it('rolls the decision back with its event, so the retry resumes the payment', async () => {
+      fake.prisma.outboxMessage.create.mockRejectedValueOnce(
+        new Error('db down'),
       );
 
-      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
-      expect(metrics.incrementPaymentsFailed).not.toHaveBeenCalled();
-    });
-
-    it('republishes the decided result on redelivery without charging again', async () => {
-      fake.seed('order-1', PaymentStatus.APPROVED);
+      await expect(service.handleOrderCreated(orderCreated)).rejects.toThrow(
+        'db down',
+      );
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.PROCESSING);
+      expect(fake.outbox).toHaveLength(0);
 
       await service.handleOrderCreated(orderCreated);
 
-      expect(gateway).not.toHaveBeenCalled();
-      expect(publishedRoutingKeys()).toEqual([RoutingKeys.PAYMENT_APPROVED]);
+      expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.APPROVED);
+      expect(outboxRoutingKeys()).toEqual([RoutingKeys.PAYMENT_APPROVED]);
     });
+
+    it.each([
+      PaymentStatus.APPROVED,
+      PaymentStatus.DECLINED,
+      PaymentStatus.FAILED,
+    ])(
+      'does nothing on redelivery for a %s payment (its event is already in the outbox)',
+      async (status) => {
+        fake.seed('order-1', status);
+
+        await service.handleOrderCreated(orderCreated);
+
+        expect(gateway).not.toHaveBeenCalled();
+        expect(fake.outbox).toHaveLength(0);
+      },
+    );
 
     it('resumes a payment stuck in PROCESSING', async () => {
       fake.seed('order-1', PaymentStatus.PROCESSING);
@@ -244,14 +251,14 @@ describe('PaymentService', () => {
     });
 
     it.each([PaymentStatus.REFUNDED, PaymentStatus.CANCELLED])(
-      'does not charge nor publish for a %s payment',
+      'does not charge nor write an event for a %s payment',
       async (status) => {
         fake.seed('order-1', status);
 
         await service.handleOrderCreated(orderCreated);
 
         expect(gateway).not.toHaveBeenCalled();
-        expect(amqp.publish).not.toHaveBeenCalled();
+        expect(fake.outbox).toHaveLength(0);
         expect(fake.byOrder('order-1')?.status).toBe(status);
       },
     );
@@ -269,7 +276,7 @@ describe('PaymentService', () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
       expect(metrics.incrementPaymentsApproved).not.toHaveBeenCalled();
     });
   });
@@ -321,7 +328,7 @@ describe('PaymentService', () => {
       expect(tombstone?.status).toBe(PaymentStatus.CANCELLED);
       expect(tombstone?.amount).toBeUndefined();
       expect(metrics.incrementPaymentsCancelled).toHaveBeenCalledTimes(1);
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
     });
 
     it('never charges an order whose OrderCreated arrives after the cancel', async () => {
@@ -329,7 +336,7 @@ describe('PaymentService', () => {
       await service.handleOrderCreated(orderCreated);
 
       expect(gateway).not.toHaveBeenCalled();
-      expect(amqp.publish).not.toHaveBeenCalled();
+      expect(fake.outbox).toHaveLength(0);
       expect(fake.payments.size).toBe(1);
       expect(fake.byOrder('order-1')?.status).toBe(PaymentStatus.CANCELLED);
     });

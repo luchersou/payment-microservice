@@ -33,6 +33,19 @@ export class DatabaseEnvironment extends BaseEnvironment {
     message: 'DATABASE_URL must be a postgres:// or postgresql:// URL',
   })
   DATABASE_URL: string;
+
+  /** How often the outbox relay looks for unpublished events */
+  @IsInt()
+  @Min(100)
+  OUTBOX_POLL_INTERVAL_MS = 1000;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_BATCH_SIZE = 100;
+
+  @IsInt()
+  @Min(100)
+  OUTBOX_PUBLISH_TIMEOUT_MS = 5000;
 }
 
 /**

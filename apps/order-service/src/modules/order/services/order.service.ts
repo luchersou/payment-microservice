@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import type { Order } from '@order/prisma/generated/prisma/client';
+import type { Order, Prisma } from '@order/prisma/generated/prisma/client';
 import { OrderStatus } from '@order/prisma/generated/prisma/enums';
 import { PrismaService } from '@order/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
 import { CorrelationIdService } from '@common/context';
 import { CorrelationLogger } from '@common/logger';
-import { Exchanges, publishEvent, RoutingKeys } from '@messaging/rabbitmq';
+import { toOutboxRecord } from '@messaging/outbox';
+import { Exchanges, RoutingKeys } from '@messaging/rabbitmq';
 import {
   CancelReason,
   CreateOrderRequestedPayload,
@@ -21,12 +21,14 @@ import { sourceStatusesFor } from '../domain/order-state-machine';
 import { OrderResponseDto } from '../dto/order-response.dto';
 import { PaginatedOrdersResponseDto } from '../dto/paginated-orders-response.dto';
 
+/** The PrismaService itself, or the client of an interactive transaction */
+type Db = Prisma.TransactionClient;
+
 @Injectable()
 export class OrderService {
   private readonly logger = new CorrelationLogger(OrderService.name);
 
   constructor(
-    private readonly amqpConnection: AmqpConnection,
     private readonly prisma: PrismaService,
     private readonly metrics: OrderMetricsService,
   ) {}
@@ -76,13 +78,13 @@ export class OrderService {
   // ─────────────────────────────────────────────
 
   /**
-   * Idempotent on payload.orderId: a redelivered request reuses the
-   * existing order and republishes OrderCreated while it is still pending,
-   * covering the case where the previous attempt persisted but failed to
-   * publish. The payment service is idempotent on orderId.
+   * Idempotent on payload.orderId: a redelivered request finds the existing
+   * order and does nothing. OrderCreated is written to the outbox in the same
+   * transaction as the order, so an order never exists without its event and
+   * there is nothing to republish.
    *
    * If the order was cancelled before this request was handled, a CANCELLED
-   * tombstone already holds the id, so OrderCreated is never published.
+   * tombstone already holds the id, so OrderCreated is never written.
    */
   async createOrder(payload: CreateOrderRequestedPayload) {
     // Fallback for requests published before the gateway sent orderId
@@ -93,35 +95,20 @@ export class OrderService {
       this.logger.log(`✅ Order ${order.id} persisted`);
       this.metrics.incrementOrdersCreated();
     } else {
-      this.logger.warn(`⚠️ Order ${order.id} already exists (redelivery)`);
-    }
-
-    if (order.status !== OrderStatus.PENDING_PAYMENT) {
-      this.logger.log(
-        `ℹ️ Order ${order.id} is ${order.status}, OrderCreated not republished`,
+      this.logger.warn(
+        `⚠️ Order ${order.id} already exists as ${order.status}, nothing to do`,
       );
-      return order;
     }
-
-    const correlationId = CorrelationIdService.getId();
-
-    await publishEvent(
-      this.amqpConnection,
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CREATED,
-      // From the request: only tombstones have null userId/total, and they
-      // are CANCELLED, so they never reach this point
-      new OrderCreatedEvent(
-        { orderId: order.id, userId: payload.userId, total: payload.total },
-        correlationId,
-      ),
-    );
 
     return order;
   }
 
   async completeOrder(orderId: string) {
-    const { order, changed } = await this.transition(orderId, OrderStatus.PAID);
+    const { order, changed } = await this.transition(
+      this.prisma,
+      orderId,
+      OrderStatus.PAID,
+    );
 
     if (!order) {
       this.logger.warn(
@@ -151,49 +138,32 @@ export class OrderService {
   async cancelByUser(orderId: string) {
     this.logger.warn(`⚠️ Attempting to cancel order ${orderId}`);
 
-    let { order, changed } = await this.transition(
-      orderId,
-      OrderStatus.CANCELLED,
-    );
+    let result: { order: Order; changed: boolean };
 
-    if (!order) {
-      ({ order, changed } = await this.createCancelledTombstone(orderId));
-    }
-
-    if (!order) {
-      this.logger.warn(`⚠️ Order ${orderId} not found. Skipping.`);
-      return;
-    }
-
-    if (!changed && order.status !== OrderStatus.CANCELLED) {
-      this.logger.warn(
-        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
+    try {
+      result = await this.prisma.$transaction((tx) =>
+        this.cancelInTransaction(tx, orderId),
       );
-      return;
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      // The create request persisted the order between the update and the
+      // tombstone insert, so now it exists and is cancelled normally
+      result = await this.prisma.$transaction((tx) =>
+        this.cancelInTransaction(tx, orderId),
+      );
     }
 
-    // Published when the transition happened now, and republished when the
-    // order is already CANCELLED (redelivery after a failed publish). The
-    // payment service handles OrderCancelled idempotently.
-    const correlationId = CorrelationIdService.getId();
-    const reason = CancelReason.USER_REQUESTED;
-
-    await publishEvent(
-      this.amqpConnection,
-      Exchanges.ORDERS,
-      RoutingKeys.ORDER_CANCELLED,
-      new OrderCancelledEvent(
-        { orderId: order.id, reason, cancelledAt: order.updatedAt },
-        correlationId,
-      ),
-    );
+    const { order, changed } = result;
 
     if (changed) {
       this.logger.log(`✅ Order ${orderId} updated to CANCELLED successfully`);
-      this.metrics.incrementOrdersCancelled(reason);
+      this.metrics.incrementOrdersCancelled(CancelReason.USER_REQUESTED);
+    } else if (order.status === OrderStatus.CANCELLED) {
+      this.logger.log(`ℹ️ Order ${orderId} already CANCELLED. Skipping.`);
     } else {
       this.logger.warn(
-        `⚠️ Order ${orderId} already CANCELLED. OrderCancelled republished.`,
+        `⚠️ Cannot cancel order ${orderId} with status ${order.status}. Skipping.`,
       );
     }
 
@@ -207,6 +177,7 @@ export class OrderService {
    */
   async failOrder(orderId: string) {
     const { order, changed } = await this.transition(
+      this.prisma,
       orderId,
       OrderStatus.FAILED,
     );
@@ -263,29 +234,58 @@ export class OrderService {
   // ─────────────────────────────────────────────
 
   /**
+   * Cancels the order and writes OrderCancelled to the outbox atomically.
+   *
    * The gateway returns the orderId before the order exists, so a cancel can
    * be handled before its create request. Instead of waiting for the order
    * (a bounded retry that, once exhausted, let it be created and charged),
-   * the id is taken by a CANCELLED tombstone the later create will find.
+   * the id is taken by a CANCELLED tombstone the later create will find. The
+   * insert throws P2002 if the create won the race; the caller retries.
    */
-  private async createCancelledTombstone(
+  private async cancelInTransaction(
+    tx: Db,
     orderId: string,
-  ): Promise<{ order: Order | null; changed: boolean }> {
-    try {
-      const order = await this.prisma.order.create({
+  ): Promise<{ order: Order; changed: boolean }> {
+    const { order, changed } = await this.transition(
+      tx,
+      orderId,
+      OrderStatus.CANCELLED,
+    );
+
+    if (!order) {
+      const tombstone = await tx.order.create({
         data: { id: orderId, status: OrderStatus.CANCELLED },
       });
 
       this.logger.log(
         `🪦 Order ${orderId} recorded as CANCELLED before being created`,
       );
-      return { order, changed: true };
-    } catch (error) {
-      if (!isUniqueConstraintError(error)) throw error;
-
-      // The create request persisted the order between the update and insert
-      return this.transition(orderId, OrderStatus.CANCELLED);
+      await this.enqueueOrderCancelled(tx, tombstone);
+      return { order: tombstone, changed: true };
     }
+
+    if (changed) {
+      await this.enqueueOrderCancelled(tx, order);
+    }
+
+    return { order, changed };
+  }
+
+  private async enqueueOrderCancelled(tx: Db, order: Order) {
+    await tx.outboxMessage.create({
+      data: toOutboxRecord(
+        Exchanges.ORDERS,
+        RoutingKeys.ORDER_CANCELLED,
+        new OrderCancelledEvent(
+          {
+            orderId: order.id,
+            reason: CancelReason.USER_REQUESTED,
+            cancelledAt: order.updatedAt,
+          },
+          CorrelationIdService.getId(),
+        ),
+      ),
+    });
   }
 
   // ─────────────────────────────────────────────
@@ -298,15 +298,16 @@ export class OrderService {
    * overwrite each other. Returns the current order and whether it changed.
    */
   private async transition(
+    db: Db,
     orderId: string,
     to: OrderStatus,
   ): Promise<{ order: Order | null; changed: boolean }> {
-    const { count } = await this.prisma.order.updateMany({
+    const { count } = await db.order.updateMany({
       where: { id: orderId, status: { in: sourceStatusesFor(to) } },
       data: { status: to },
     });
 
-    const order = await this.prisma.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
     });
 
@@ -318,13 +319,28 @@ export class OrderService {
     payload: CreateOrderRequestedPayload,
   ): Promise<{ order: Order; created: boolean }> {
     try {
-      const order = await this.prisma.order.create({
-        data: {
-          id: orderId,
-          userId: payload.userId,
-          total: payload.total,
-          status: OrderStatus.PENDING_PAYMENT,
-        },
+      const order = await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({
+          data: {
+            id: orderId,
+            userId: payload.userId,
+            total: payload.total,
+            status: OrderStatus.PENDING_PAYMENT,
+          },
+        });
+
+        await tx.outboxMessage.create({
+          data: toOutboxRecord(
+            Exchanges.ORDERS,
+            RoutingKeys.ORDER_CREATED,
+            new OrderCreatedEvent(
+              { orderId, userId: payload.userId, total: payload.total },
+              CorrelationIdService.getId(),
+            ),
+          ),
+        });
+
+        return order;
       });
       return { order, created: true };
     } catch (error) {
