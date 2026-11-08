@@ -13,6 +13,9 @@ This project was built to showcase real-world backend architecture concepts such
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
 [![CI](https://github.com/luchersou/payment-microservice/actions/workflows/ci.yml/badge.svg)](https://github.com/luchersou/payment-microservice/actions/workflows/ci.yml)
 
+![Grafana dashboard: Microservices Overview](.github/assets/grafana-dashboard.webp)
+<sub>The provisioned Grafana dashboard after 3 minutes of `npm run traffic` (~4 orders/s): 650 orders, 82% payment approval, zero 5xx, zero dead-lettered messages. See [Observability](#-observability).</sub>
+
 ---
 
 ## 📐 Architecture
@@ -334,6 +337,13 @@ The dashboard has five sections:
 - **API Gateway (HTTP)**: requests by route, responses by status code, p95 latency
 - **Messaging (RabbitMQ)**: p95 processing time per event, queue depth (including `*.retry` and `*.dlq`), failed messages by outcome
 - **Runtime (Node.js)**: CPU, memory and event loop lag per service
+
+<details>
+<summary>Full dashboard screenshot</summary>
+
+![Grafana dashboard: all sections](.github/assets/grafana-dashboard-full.webp)
+
+</details>
 
 Scraped endpoints: `api-gateway:3000/api/metrics`, `order-service:3001/metrics`, `payment-service:3002/metrics`, and RabbitMQ's built-in exporter (`rabbitmq:15692/metrics/detailed`).
 
